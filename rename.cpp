@@ -6,6 +6,7 @@
 
 #include <Application.h>
 #include <Alert.h>
+#include <Button.h>
 #include <Catalog.h>
 #include <CardView.h>
 #include <ControlLook.h>
@@ -23,19 +24,28 @@
 #include <Directory.h>
 #include <FindDirectory.h>
 
-#include <kernel/fs_info.h>
-#include <kernel/fs_attr.h>
+#include <map>
+#include <set>
 
+#include <getopt.h>
 #include <regex.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 
+typedef std::set<entry_ref> EntrySet;
+typedef std::set<BString> StringSet;
+
+
 static const uint32 kMsgRenameSettings = 'pReS';
 
 static const uint32 kMsgUpdateReplace = 'upRe';
 static const uint32 kMsgUpdateSearch = 'upSe';
+static const uint32 kMsgRename = 'okRe';
+static const uint32 kMsgCheckRename = 'chRe';
+static const uint32 kMsgChecked = 'chkd';
+
 
 static rgb_color kGroupColor[] = {
 	make_color(100, 200, 100),
@@ -98,16 +108,45 @@ private:
 };
 
 
+class PreviewList : public BListView {
+public:
+								PreviewList(const char* name);
+
+	virtual	void				Draw(BRect updateRect);
+};
+
+
+enum Error {
+	NO_ERROR,
+	INVALID_NAME,
+	DUPLICATE,
+	EXISTS
+};
+
+
 class PreviewItem : public BStringItem {
 public:
 								PreviewItem(const entry_ref& ref);
 
 			void				SetRenameAction(const RenameAction& action);
-			const char*			TargetName() const
-									{ return fTargetName.String(); }
+
+			const entry_ref&	Ref() const
+									{ return fRef; }
+			const entry_ref&	TargetRef() const
+									{ return fTargetRef; }
+			bool				HasTarget() const
+									{ return fTargetRef.name != NULL
+										&& fTargetRef.name[0] != '\0'; }
+			bool				IsValid() const
+									{ return fError == NO_ERROR; }
+			void				SetError(Error error)
+									{ fError = error; }
+			const char*			ErrorMessage() const;
 
 	virtual	void				DrawItem(BView* owner, BRect frame,
 									bool complete);
+
+	static	int					Compare(const void* _a, const void* _b);
 
 private:
 			void				_DrawGroupedText(BView* owner, BRect frame,
@@ -116,13 +155,18 @@ private:
 									int32 first);
 			void				_DrawGroup(BView* owner, uint32 groupIndex,
 									BRect frame, float start, float end);
+			bool				_IsValidName(const char* name) const;
 
 private:
 			entry_ref			fRef;
-			BString				fTargetName;
+			entry_ref			fTargetRef;
 			BObjectList<Group>	fGroups;
 			BObjectList<Group>	fRenameGroups;
+			Error				fError;
 };
+
+typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
+typedef std::map<BString, PreviewItem*> NameMap;
 
 
 class RenameWindow : public BWindow {
@@ -131,6 +175,7 @@ public:
 	virtual						~RenameWindow();
 
 			void				AddRef(const entry_ref& ref);
+			int32				AddRefs(const BMessage& message);
 
 	virtual	void				MessageReceived(BMessage* message);
 
@@ -139,17 +184,38 @@ private:
 			BTextControl*		fPatternControl;
 			BTextControl*		fRenameControl;
 			BButton*			fOkButton;
-			BButton*			fCancelButton;
 			BListView*			fPreviewList;
+			PreviewItemMap		fPreviewItemMap;
+			BMessenger			fRenameChecker;
+};
+
+
+class RenameChecker : public BLooper {
+public:
+								RenameChecker();
+
+	virtual	void				MessageReceived(BMessage* message);
+
+private:
+			bool				_CheckRef(const entry_ref& ref,
+									const entry_ref& targetRef);
 };
 
 
 extern const char* __progname;
 static const char* kProgramName = __progname;
 
+
+static struct option const kOptions[] = {
+	{"ui", no_argument, 0, 'u'},
+	{"verbose", no_argument, 0, 'v'},
+	{"help", no_argument, 0, 'h'},
+	{0, 0, 0, 0}
+};
+
+
 BRect gWindowFrame(150, 150, 500, 400);
 bool gRecursive = true;
-bool gFromShell = false;
 bool gVerbose = false;
 
 
@@ -297,7 +363,7 @@ bool
 RegularExpressionRenameAction::SetPattern(const char* pattern)
 {
 	// TODO: add options for flags
-	int result = regcomp(&fCompiledPattern, pattern, REG_EXTENDED | REG_ICASE);
+	int result = regcomp(&fCompiledPattern, pattern, REG_EXTENDED);
 	// TODO: show/report error!
 	fValidPattern = result == 0;
 
@@ -323,14 +389,12 @@ RegularExpressionRenameAction::AddGroups(BObjectList<Group>& groupList,
 	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
 		return false;
 
-puts(string);
 	for (int groupIndex = 0; groupIndex < MAX_GROUPS; groupIndex++) {
 		if (groups[groupIndex].rm_so == -1)
 			break;
 
 		groupList.AddItem(new Group(groupIndex, groups[groupIndex].rm_so,
 			groups[groupIndex].rm_eo));
-		printf("\t[%d] %d - %d\n", groupIndex, groups[groupIndex].rm_so, groups[groupIndex].rm_eo);
 	}
 
 	return true;
@@ -349,8 +413,14 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
 		return stringBuffer;
 
-puts(fReplace);
 	stringBuffer = fReplace;
+	if (groups[1].rm_so == -1) {
+		// There is just a single group -- just replace the match
+		stringBuffer.Prepend(string, groups[0].rm_so);
+		stringBuffer.Append(string + groups[0].rm_eo);
+		return stringBuffer;
+	}
+
 	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
 	char* target = buffer;
 
@@ -371,7 +441,7 @@ puts(fReplace);
 			startOffset = target - buffer;
 			groupList.AddItem(new Group(groupIndex, startOffset,
 				startOffset + length));
-printf("\t[%d] %d - %d\n", groupList.CountItems() - 1, startOffset, startOffset + length);
+
 			target += length - 1;
 		}
 	}
@@ -381,7 +451,32 @@ printf("\t[%d] %d - %d\n", groupList.CountItems() - 1, startOffset, startOffset 
 }
 
 
-//	#pragma mark -
+//	#pragma mark - PreviewList
+
+
+PreviewList::PreviewList(const char* name)
+	:
+	BListView(name, B_SINGLE_SELECTION_LIST,
+		B_FULL_UPDATE_ON_RESIZE | B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE)
+{
+}
+
+
+void
+PreviewList::Draw(BRect updateRect)
+{
+	BListView::Draw(updateRect);
+
+	BRect rect = Bounds();
+	rect.right = rect.left + rect.Width() / 2.f;
+	if (rect.right <= updateRect.right) {
+		StrokeLine(BPoint(rect.right, rect.top),
+			BPoint(rect.right, rect.bottom));
+	}
+}
+
+
+//	#pragma mark - PreviewItem
 
 
 PreviewItem::PreviewItem(const entry_ref& ref)
@@ -390,6 +485,8 @@ PreviewItem::PreviewItem(const entry_ref& ref)
 	fRef(ref),
 	fGroups(10, true)
 {
+	fTargetRef.device = fRef.device;
+	fTargetRef.directory = fRef.directory;
 }
 
 
@@ -398,9 +495,31 @@ PreviewItem::SetRenameAction(const RenameAction& action)
 {
 	fGroups.MakeEmpty();
 	fRenameGroups.MakeEmpty();
+	fError = NO_ERROR;
 
 	action.AddGroups(fGroups, fRef.name);
-	fTargetName = action.Rename(fRenameGroups, fRef.name);
+
+	fTargetRef.set_name(action.Rename(fRenameGroups, fRef.name).String());
+
+	if (HasTarget() && !_IsValidName(fTargetRef.name))
+		fError = INVALID_NAME;
+}
+
+
+const char*
+PreviewItem::ErrorMessage() const
+{
+	switch (fError) {
+		default:
+		case NO_ERROR:
+			return NULL;
+		case INVALID_NAME:
+			return "Invalid name!";
+		case DUPLICATE:
+			return "Duplicated name!";
+		case EXISTS:
+			return "Already exists!";
+	}
 }
 
 
@@ -408,7 +527,9 @@ void
 PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 {
 	rgb_color lowColor = owner->LowColor();
-	float width = owner->Bounds().Width() / 2.f;
+	rgb_color highColor = owner->HighColor();
+	float width = owner->Bounds().Width() / 2.f
+		+ be_control_look->DefaultLabelSpacing();
 
 	if (IsSelected() || complete) {
 		rgb_color color;
@@ -438,15 +559,44 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 		_DrawGroupedText(owner, frame, x, fRef.name, fGroups, startIndex);
 	}
 
+	if (fError != NO_ERROR && HasTarget())
+		owner->SetHighColor(200, 50, 50);
+
 	if (fRenameGroups.IsEmpty()) {
 		owner->MovePenTo(x + width, frame.top + BaselineOffset());
-		owner->DrawString(fTargetName);
+		owner->DrawString(fTargetRef.name);
 	} else {
-		_DrawGroupedText(owner, frame, x + width, fTargetName,
+		_DrawGroupedText(owner, frame, x + width, fTargetRef.name,
 			fRenameGroups, 0);
 	}
 
+	if (fError != NO_ERROR && HasTarget()) {
+		const char* errorText = ErrorMessage();
+		float width = owner->StringWidth(errorText);
+
+		owner->MovePenBy(10, 0);
+		BPoint location = owner->PenLocation();
+		owner->SetLowColor(255, 0, 0);
+		owner->FillRect(BRect(location.x - 2, frame.top,
+			location.x + width + 2, frame.bottom), B_SOLID_LOW);
+		owner->SetHighColor(255, 255, 255);
+		owner->DrawString(errorText);
+	}
+
 	owner->SetLowColor(lowColor);
+	owner->SetHighColor(highColor);
+}
+
+
+/*static*/ int
+PreviewItem::Compare(const void* _a, const void* _b)
+{
+	const PreviewItem* a = *static_cast<const PreviewItem* const*>(_a);
+	const PreviewItem* b = *static_cast<const PreviewItem* const*>(_b);
+	const entry_ref& refA = a->Ref();
+	const entry_ref& refB = b->Ref();
+
+	return strcasecmp(refA.name, refB.name);
 }
 
 
@@ -512,6 +662,13 @@ PreviewItem::_DrawGroup(BView* owner, uint32 groupIndex, BRect frame,
 }
 
 
+bool
+PreviewItem::_IsValidName(const char* name) const
+{
+	return strchr(name, '/') == NULL;
+}
+
+
 //	#pragma mark -
 
 
@@ -526,8 +683,10 @@ RenameWindow::RenameWindow(BRect rect)
 	fRenameControl = new BTextControl("Replace with", NULL, NULL);
 	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdateReplace));
 
-	fPreviewList = new BListView("preview", B_SINGLE_SELECTION_LIST,
-		B_FULL_UPDATE_ON_RESIZE | B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE);
+	fOkButton = new BButton("ok", "Rename", new BMessage(kMsgRename));
+	fOkButton->SetEnabled(false);
+
+	fPreviewList = new PreviewList("preview");
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 		.AddGrid(0.f)
@@ -537,18 +696,30 @@ RenameWindow::RenameWindow(BRect rect)
 			.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
 			.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1)
 		.End()
+		.AddGroup(B_HORIZONTAL)
+			.SetInsets(B_USE_DEFAULT_SPACING, 0,
+				B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
+			.AddGlue()
+			.Add(fOkButton)
+		.End()
 		.AddGroup(B_VERTICAL)
 			.SetInsets(-2)
 			.Add(new BScrollView("scroller", fPreviewList, 0, true, true))
 		.End();
 
 	fPatternControl->MakeFocus(true);
+
+	RenameChecker* checker = new RenameChecker();
+	checker->Run();
+
+	fRenameChecker = checker;
 }
 
 
 RenameWindow::~RenameWindow()
 {
 	gWindowFrame = Frame();
+	fRenameChecker.SendMessage(B_QUIT_REQUESTED);
 
 	saveSettings();
 }
@@ -557,7 +728,29 @@ RenameWindow::~RenameWindow()
 void
 RenameWindow::AddRef(const entry_ref& ref)
 {
-	fPreviewList->AddItem(new PreviewItem(ref));
+	PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
+	if (found != fPreviewItemMap.end()) {
+		// Ignore duplicate entry
+		return;
+	}
+
+	PreviewItem* item = new PreviewItem(ref);
+	fPreviewItemMap.insert(std::make_pair(ref, item));
+
+	fPreviewList->AddItem(item);
+	fPreviewList->SortItems(&PreviewItem::Compare);
+}
+
+
+int32
+RenameWindow::AddRefs(const BMessage& message)
+{
+	entry_ref ref;
+	int32 index;
+	for (index = 0; message.FindRef("refs", index, &ref) == B_OK; index++) {
+		AddRef(ref);
+	}
+	return index;
 }
 
 
@@ -567,18 +760,121 @@ RenameWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 		case kMsgUpdateSearch:
 		case kMsgUpdateReplace:
+		{
 			RegularExpressionRenameAction action;
 			action.SetPattern(fPatternControl->Text());
 			action.SetReplace(fRenameControl->Text());
 
+			BMessage check(kMsgCheckRename);
+			int errorCount = 0;
+			NameMap map;
 			for (int32 i = 0; i < fPreviewList->CountItems(); i++) {
 				PreviewItem* item = static_cast<PreviewItem*>(
 					fPreviewList->ItemAt(i));
 				item->SetRenameAction(action);
+
+				if (item->IsValid()) {
+					BString name = item->TargetRef().name;
+					NameMap::iterator found = map.find(name);
+					if (found != map.end()) {
+						found->second->SetError(DUPLICATE);
+						item->SetError(DUPLICATE);
+						errorCount++;
+					} else
+						map.insert(std::make_pair(name, item));
+				} else if (item->HasTarget())
+					errorCount++;
+
+				if (errorCount == 0 && item->HasTarget()) {
+					check.AddRef("source", &item->Ref());
+					check.AddRef("target", &item->TargetRef());
+				}
 			}
+
 			fPreviewList->Invalidate();
+
+			fOkButton->SetEnabled(false);
+
+			if (errorCount == 0) {
+				// Check paths on disk
+				fRenameChecker.SendMessage(&check, this);
+			}
+			break;
+		}
+		case kMsgChecked:
+		{
+			int32 errorCount = 0;
+			entry_ref ref;
+			int32 index = 0;
+			for (; message->FindRef("refs", index, &ref) == B_OK; index++) {
+				PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
+				if (found != fPreviewItemMap.end()) {
+					found->second->SetError(EXISTS);
+					errorCount++;
+				}
+			}
+			if (errorCount != 0)
+				fPreviewList->Invalidate();
+			else
+				fOkButton->SetEnabled(true);
+			break;
+		}
+
+		case B_SIMPLE_DATA:
+			AddRefs(*message);
 			break;
 	}
+}
+
+
+//	#pragma mark -
+
+
+RenameChecker::RenameChecker()
+	:
+	BLooper("Rename checker")
+{
+}
+
+
+void
+RenameChecker::MessageReceived(BMessage* message)
+{
+	switch (message->what) {
+		case kMsgCheckRename:
+		{
+			BMessage reply(kMsgChecked);
+			int32 count = 0;
+
+			entry_ref ref;
+			int32 index;
+			for (index = 0; message->FindRef("source", index, &ref) == B_OK;
+					index++) {
+				entry_ref targetRef;
+				if (message->FindRef("target", index, &targetRef) == B_OK) {
+					if (!_CheckRef(ref, targetRef)) {
+						reply.AddRef("refs", &ref);
+						count++;
+					}
+				}
+			}
+
+			message->SendReply(&reply);
+			break;
+		}
+
+		default:
+			BLooper::MessageReceived(message);
+			break;
+	}
+}
+
+
+bool
+RenameChecker::_CheckRef(const entry_ref& ref, const entry_ref& targetRef)
+{
+	BEntry entry(&targetRef);
+	return !entry.Exists();
 }
 
 
@@ -591,23 +887,14 @@ process_refs(entry_ref directoryRef, BMessage* msg, void*)
 	readSettings();
 
 	RenameWindow* window = new RenameWindow(gWindowFrame);
+
+	int32 count = window->AddRefs(*msg);
+	if (count == 0)
+		window->AddRef(directoryRef);
+
 	window->Show();
 
 	wait_for_thread(window->Thread(), NULL);
-
-/*	entry_ref ref;
-	int32 index;
-	for (index = 0; msg->FindRef("refs", index, &ref) == B_OK; index ++) {
-		BEntry entry(&ref);
-		if (entry.InitCheck() == B_OK)
-			handleDirectory(entry, 0);
-	}
-
-	if (index == 0) {
-		BEntry entry(&directoryRef);
-		if (entry.InitCheck() == B_OK)
-			handleDirectory(entry, 0);
-	}*/
 }
 
 
@@ -629,65 +916,56 @@ printUsage()
 }
 
 
-class RenameApplication : public BApplication {
-public:
-	RenameApplication()
-		:
-		BApplication("application/x-vnd.pinc.rename")
-	{
-	}
-
-	virtual void ReadyToRun()
-	{
-//		readSettings();
-		RenameWindow* window = new RenameWindow(gWindowFrame);
-
-		entry_ref ref;
-		get_ref_for_path("/boot/home/Desktop/test-124.jpg", &ref);
-		window->AddRef(ref);
-
-		window->Show();
-	}
-};
-
 int
 main(int argc, char** argv)
 {
-//	BApplication app("application/x-vnd.pinc.rename");
-	RenameApplication app;
-
-	app.Run();
-	return 0;
+	BApplication app("application/x-vnd.pinc.rename");
 
 	if (argc == 1) {
 		printUsage();
 		return 1;
 	}
 
-	gFromShell = true;
+	bool useUI = false;
 
-	while (*++argv && **argv == '-') {
-		for (int i = 1; (*argv)[i]; i++) {
-			switch ((*argv)[i]) {
-				case 'v':
-					gVerbose = true;
-					break;
-				default:
-					printUsage();
-					return 1;
-			}
+	int c;
+	while ((c = getopt_long(argc, argv, "uhv", kOptions, NULL)) != -1) {
+		switch (c) {
+			case 0:
+				break;
+			case 'u':
+				useUI = true;
+				break;
+			case 'h':
+				printUsage();
+				return 0;
+			case 'v':
+				gVerbose = true;
+				break;
+			default:
+				printUsage();
+				return 1;
 		}
 	}
 
-	argv--;
+	RenameWindow* window = NULL;
+	if (useUI)
+		window = new RenameWindow(gWindowFrame);
 
-	while (*++argv) {
-		BEntry entry(*argv);
-
-		if (entry.InitCheck() == B_OK)
-			handleDirectory(entry, 0);
-		else
-			fprintf(stderr, "could not find \"%s\".\n", *argv);
+	for (int index = optind; index < argc; index++) {
+		if (useUI) {
+			entry_ref ref;
+			status_t status = get_ref_for_path(argv[index], &ref);
+			if (status == B_OK)
+				window->AddRef(ref);
+		}
 	}
+
+	if (useUI) {
+		window->Show();
+
+		wait_for_thread(window->Thread(), NULL);
+	}
+
 	return 0;
 }
