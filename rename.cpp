@@ -221,7 +221,7 @@ static struct option const kOptions[] = {
 };
 
 
-BRect gWindowFrame(150, 150, 500, 400);
+BRect gWindowFrame(150, 150, 600, 500);
 bool gRecursive = true;
 bool gVerbose = false;
 
