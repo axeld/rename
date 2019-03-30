@@ -87,7 +87,7 @@ COMPILER_FLAGS =
 #	specify additional linker flags
 LINKER_FLAGS =
 
-INSTALL_DIR=/boot/home/config/bin
+INSTALL_DIR=/boot/home/config/non-packaged/bin
 TARGET_DIR=.
 
 ## include the makefile-engine
