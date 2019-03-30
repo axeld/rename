@@ -129,6 +129,7 @@ public:
 								PreviewItem(const entry_ref& ref);
 
 			void				SetRenameAction(const RenameAction& action);
+			status_t			Rename();
 
 			const entry_ref&	Ref() const
 									{ return fRef; }
@@ -139,7 +140,9 @@ public:
 										&& fTargetRef.name[0] != '\0'; }
 			bool				IsValid() const
 									{ return fError == NO_ERROR; }
-			void				SetError(Error error)
+			::Error				Error() const
+									{ return fError; }
+			void				SetError(::Error error)
 									{ fError = error; }
 			const char*			ErrorMessage() const;
 
@@ -162,7 +165,7 @@ private:
 			entry_ref			fTargetRef;
 			BObjectList<Group>	fGroups;
 			BObjectList<Group>	fRenameGroups;
-			Error				fError;
+			::Error				fError;
 };
 
 typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
@@ -178,6 +181,10 @@ public:
 			int32				AddRefs(const BMessage& message);
 
 	virtual	void				MessageReceived(BMessage* message);
+
+private:
+			void				_UpdatePreviewItems();
+			void				_RenameFiles();
 
 private:
 			BCardView*			fCardView;
@@ -483,7 +490,8 @@ PreviewItem::PreviewItem(const entry_ref& ref)
 	:
 	BStringItem(ref.name),
 	fRef(ref),
-	fGroups(10, true)
+	fGroups(10, true),
+	fError(NO_ERROR)
 {
 	fTargetRef.device = fRef.device;
 	fTargetRef.directory = fRef.directory;
@@ -499,10 +507,34 @@ PreviewItem::SetRenameAction(const RenameAction& action)
 
 	action.AddGroups(fGroups, fRef.name);
 
-	fTargetRef.set_name(action.Rename(fRenameGroups, fRef.name).String());
+	BString newName = action.Rename(fRenameGroups, fRef.name);
+	if (newName != fRef.name)
+		fTargetRef.set_name(newName.String());
 
 	if (HasTarget() && !_IsValidName(fTargetRef.name))
 		fError = INVALID_NAME;
+}
+
+
+status_t
+PreviewItem::Rename()
+{
+	if (!HasTarget())
+		return B_ENTRY_NOT_FOUND;
+
+	BEntry entry(&fRef);
+	status_t status = entry.InitCheck();
+	if (status != B_OK)
+		return status;
+
+	status = entry.Rename(fTargetRef.name);
+	if (status != B_OK)
+		return status;
+
+	fRef.set_name(fTargetRef.name);
+	fTargetRef.set_name(NULL);
+
+	return B_OK;
 }
 
 
@@ -528,8 +560,9 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 {
 	rgb_color lowColor = owner->LowColor();
 	rgb_color highColor = owner->HighColor();
-	float width = owner->Bounds().Width() / 2.f
-		+ be_control_look->DefaultLabelSpacing();
+	BRect bounds = owner->Bounds();
+	float half = bounds.Width() / 2.f;
+	float width = half + be_control_look->DefaultLabelSpacing();
 
 	if (IsSelected() || complete) {
 		rgb_color color;
@@ -544,6 +577,11 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 		owner->SetLowColor(owner->ViewColor());
 
 	float x = frame.left + be_control_look->DefaultLabelSpacing();
+	BRect rect = bounds;
+	rect.right = half - 1;
+
+	owner->PushState();
+	owner->ClipToRect(rect);
 
 	if (fGroups.IsEmpty()) {
 		// Text does not match
@@ -558,6 +596,8 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 		int startIndex = fGroups.CountItems() == 1 ? 0 : 1;
 		_DrawGroupedText(owner, frame, x, fRef.name, fGroups, startIndex);
 	}
+
+	owner->PopState();
 
 	if (fError != NO_ERROR && HasTarget())
 		owner->SetHighColor(200, 50, 50);
@@ -760,47 +800,9 @@ RenameWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 		case kMsgUpdateSearch:
 		case kMsgUpdateReplace:
-		{
-			RegularExpressionRenameAction action;
-			action.SetPattern(fPatternControl->Text());
-			action.SetReplace(fRenameControl->Text());
-
-			BMessage check(kMsgCheckRename);
-			int errorCount = 0;
-			NameMap map;
-			for (int32 i = 0; i < fPreviewList->CountItems(); i++) {
-				PreviewItem* item = static_cast<PreviewItem*>(
-					fPreviewList->ItemAt(i));
-				item->SetRenameAction(action);
-
-				if (item->IsValid()) {
-					BString name = item->TargetRef().name;
-					NameMap::iterator found = map.find(name);
-					if (found != map.end()) {
-						found->second->SetError(DUPLICATE);
-						item->SetError(DUPLICATE);
-						errorCount++;
-					} else
-						map.insert(std::make_pair(name, item));
-				} else if (item->HasTarget())
-					errorCount++;
-
-				if (errorCount == 0 && item->HasTarget()) {
-					check.AddRef("source", &item->Ref());
-					check.AddRef("target", &item->TargetRef());
-				}
-			}
-
-			fPreviewList->Invalidate();
-
-			fOkButton->SetEnabled(false);
-
-			if (errorCount == 0) {
-				// Check paths on disk
-				fRenameChecker.SendMessage(&check, this);
-			}
+			_UpdatePreviewItems();
 			break;
-		}
+
 		case kMsgChecked:
 		{
 			int32 errorCount = 0;
@@ -820,10 +822,84 @@ RenameWindow::MessageReceived(BMessage* message)
 			break;
 		}
 
+		case kMsgRename:
+			_RenameFiles();
+			break;
+
 		case B_SIMPLE_DATA:
 			AddRefs(*message);
+			_UpdatePreviewItems();
 			break;
 	}
+}
+
+
+void
+RenameWindow::_UpdatePreviewItems()
+{
+	RegularExpressionRenameAction action;
+	action.SetPattern(fPatternControl->Text());
+	action.SetReplace(fRenameControl->Text());
+
+	BMessage check(kMsgCheckRename);
+	int errorCount = 0;
+	int validCount = 0;
+	NameMap map;
+	for (int32 i = 0; i < fPreviewList->CountItems(); i++) {
+		PreviewItem* item = static_cast<PreviewItem*>(
+			fPreviewList->ItemAt(i));
+		item->SetRenameAction(action);
+
+		if (item->IsValid()) {
+			if (item->HasTarget()) {
+				BString name = item->TargetRef().name;
+				NameMap::iterator found = map.find(name);
+				if (found != map.end()) {
+					found->second->SetError(DUPLICATE);
+					item->SetError(DUPLICATE);
+					errorCount++;
+				} else {
+					map.insert(std::make_pair(name, item));
+					validCount++;
+				}
+			}
+		} else if (item->HasTarget()) {
+			errorCount++;
+		}
+
+		if (errorCount == 0 && item->HasTarget()) {
+			check.AddRef("source", &item->Ref());
+			check.AddRef("target", &item->TargetRef());
+		}
+	}
+
+	fPreviewList->Invalidate();
+
+	fOkButton->SetEnabled(false);
+
+	if (errorCount == 0 && validCount > 0) {
+		// Check paths on disk
+		fRenameChecker.SendMessage(&check, this);
+	}
+}
+
+
+void
+RenameWindow::_RenameFiles()
+{
+	fPreviewItemMap.clear();
+	for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
+		PreviewItem* item = static_cast<PreviewItem*>(
+			fPreviewList->ItemAt(index));
+
+		status_t status = item->Rename();
+		// TODO: Error reporting!
+
+		fPreviewItemMap.insert(std::make_pair(item->Ref(), item));
+	}
+
+	fPreviewList->SortItems(&PreviewItem::Compare);
+	_UpdatePreviewItems();
 }
 
 
