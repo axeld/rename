@@ -233,7 +233,7 @@ getSettingsPath(BPath &path)
 	if ((status = find_directory(B_USER_SETTINGS_DIRECTORY, &path)) != B_OK)
 		return status;
 
-	path.Append("pinc.albumattr settings");
+	path.Append("pinc.rename settings");
 	return B_OK;
 }
 
@@ -284,7 +284,7 @@ readSettings()
 		return B_ENTRY_NOT_FOUND;
 
 	BRect rect;
-	if (load.FindRect("window position", &rect) == B_OK)
+	if (load.FindRect("window frame", &rect) == B_OK)
 		gWindowFrame = rect;
 
 	return B_OK;
@@ -893,7 +893,10 @@ RenameWindow::_RenameFiles()
 			fPreviewList->ItemAt(index));
 
 		status_t status = item->Rename();
-		// TODO: Error reporting!
+		if (status != B_OK) {
+			// TODO: Proper error reporting!
+			fprintf(stderr, "Renaming failed: %s\n", strerror(status));
+		}
 
 		fPreviewItemMap.insert(std::make_pair(item->Ref(), item));
 	}
@@ -980,14 +983,7 @@ printUsage()
 	printf("Copyright (c) 2019 pinc software.\n"
 		"Usage: %s [-vrmfictds] <list of directories>\n"
 		"  -v\tverbose mode\n"
-		"  -r\tenter directories recursively\n"
-		"  -m\tdon't use the media kit: retrieve song length from attributes only\n"
-		"  -f\tforces updates even if the directories already have attributes\n"
-		"  -i\tinstalls the extra application/x-vnd.Be-directory-album MIME type\n"
-		"  -c\tfinds a cover image and set their thumbnail as directory icon\n"
-		"  -t\tdon't use the thumbnail from the image, always create a new one\n"
-		"  -d\tallows different artists in one album (i.e. for samplers, soundtracks, ...)\n"
-		"  -s\tread options from standard settings file\n",
+		"  -u\tshow UI\n",
 		kProgramName);
 }
 
@@ -1025,8 +1021,10 @@ main(int argc, char** argv)
 	}
 
 	RenameWindow* window = NULL;
-	if (useUI)
+	if (useUI) {
+		readSettings();
 		window = new RenameWindow(gWindowFrame);
+	}
 
 	for (int index = optind; index < argc; index++) {
 		if (useUI) {
