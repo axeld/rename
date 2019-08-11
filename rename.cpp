@@ -13,6 +13,7 @@
 #include <LayoutBuilder.h>
 #include <ListView.h>
 #include <ObjectList.h>
+#include <PopUpMenu.h>
 #include <ScrollView.h>
 #include <String.h>
 #include <TextControl.h>
@@ -40,8 +41,8 @@ typedef std::set<BString> StringSet;
 
 static const uint32 kMsgRenameSettings = 'pReS';
 
-static const uint32 kMsgUpdateReplace = 'upRe';
-static const uint32 kMsgUpdateSearch = 'upSe';
+static const uint32 kMsgSetAction = 'stAc';
+static const uint32 kMsgUpdatePreview = 'upPv';
 static const uint32 kMsgRename = 'okRe';
 static const uint32 kMsgCheckRename = 'chRe';
 static const uint32 kMsgChecked = 'chkd';
@@ -105,6 +106,26 @@ private:
 			regex_t				fCompiledPattern;
 			bool				fValidPattern;
 			BString				fReplace;
+};
+
+
+class WindowsRenameAction : public RenameAction {
+public:
+								WindowsRenameAction();
+	virtual						~WindowsRenameAction();
+
+			void				SetReplaceChar(char replace);
+
+	virtual	bool				AddGroups(BObjectList<Group>& groups,
+									const char* string) const;
+	virtual BString				Rename(BObjectList<Group>& groups,
+									const char* string) const;
+
+private:
+	static	bool				_IsInvalidCharacter(char c);
+
+private:
+			char				fReplaceChar;
 };
 
 
@@ -172,6 +193,43 @@ typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
 typedef std::map<BString, PreviewItem*> NameMap;
 
 
+class RenameView : public BView {
+public:
+								RenameView(const char* name);
+	virtual						~RenameView();
+
+	virtual	RenameAction*		Action() const = 0;
+	virtual void				RequestFocus() const = 0;
+};
+
+
+class RegularExpressionView : public RenameView {
+public:
+								RegularExpressionView();
+	virtual						~RegularExpressionView();
+
+	virtual	RenameAction*		Action() const;
+	virtual void				RequestFocus() const;
+
+private:
+			BTextControl*		fPatternControl;
+			BTextControl*		fRenameControl;
+};
+
+
+class WindowsRenameView : public RenameView {
+public:
+								WindowsRenameView();
+	virtual						~WindowsRenameView();
+
+	virtual	RenameAction*		Action() const;
+	virtual void				RequestFocus() const;
+
+private:
+			BTextControl*		fReplaceControl;
+};
+
+
 class RenameWindow : public BWindow {
 public:
 								RenameWindow(BRect rect);
@@ -187,9 +245,10 @@ private:
 			void				_RenameFiles();
 
 private:
+			BMenuField*			fActionMenuField;
+			BPopUpMenu*			fActionMenu;
 			BCardView*			fCardView;
-			BTextControl*		fPatternControl;
-			BTextControl*		fRenameControl;
+			RenameView*			fView;
 			BButton*			fOkButton;
 			BListView*			fPreviewList;
 			PreviewItemMap		fPreviewItemMap;
@@ -396,13 +455,15 @@ RegularExpressionRenameAction::AddGroups(BObjectList<Group>& groupList,
 	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
 		return false;
 
-	for (int groupIndex = 0; groupIndex < MAX_GROUPS; groupIndex++) {
+	for (int groupIndex = 1; groupIndex < MAX_GROUPS; groupIndex++) {
 		if (groups[groupIndex].rm_so == -1)
 			break;
 
 		groupList.AddItem(new Group(groupIndex, groups[groupIndex].rm_so,
 			groups[groupIndex].rm_eo));
 	}
+	if (groupList.IsEmpty())
+		groupList.AddItem(new Group(0, groups[0].rm_so, groups[0].rm_eo));
 
 	return true;
 }
@@ -457,6 +518,137 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 	return stringBuffer;
 }
 
+
+//	#pragma mark - WindowsRenameAction
+
+
+WindowsRenameAction::WindowsRenameAction()
+	:
+	fReplaceChar('_')
+{
+}
+
+
+WindowsRenameAction::~WindowsRenameAction()
+{
+}
+
+
+void
+WindowsRenameAction::SetReplaceChar(char replace)
+{
+	if (replace == '\0' || !_IsInvalidCharacter(replace))
+		fReplaceChar = replace;
+	else
+		fReplaceChar = '_';
+}
+
+
+bool
+WindowsRenameAction::AddGroups(BObjectList<Group>& groupList,
+	const char* string) const
+{
+	int groupIndex = 1;
+	int begin = -1;
+	int index = 0;
+
+	for (; string[index] != '\0'; index++) {
+		if (_IsInvalidCharacter(string[index])) {
+			if (begin < 0)
+				begin = index;
+		} else if (begin >= 0) {
+			groupList.AddItem(new Group(groupIndex++, begin, index));
+			begin = -1;
+		}
+	}
+
+	if (begin >= 0) {
+		groupList.AddItem(new Group(groupIndex++, begin, index));
+		begin = -1;
+	}
+
+	// Mark trailing dots or spaces
+	int end = index;
+	while (index > 0) {
+		char c = string[index - 1];
+		if (c != ' ' && c != '.')
+			break;
+
+		begin = --index;
+	}
+
+	if (begin >= 0)
+		groupList.AddItem(new Group(groupIndex++, begin, end));
+
+	return groupIndex > 1;
+}
+
+
+BString
+WindowsRenameAction::Rename(BObjectList<Group>& groupList,
+	const char* string) const
+{
+	BString stringBuffer = string;
+	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
+	int groupIndex = 1;
+	int begin = -1;
+	int index = 0;
+
+	for (; buffer[index] != '\0'; index++) {
+		if (_IsInvalidCharacter(buffer[index])) {
+			if (fReplaceChar != '\0') {
+				if (begin < 0)
+					begin = index;
+				buffer[index] = fReplaceChar;
+			} else {
+				memmove(buffer + index, buffer + index + 1,
+					strlen(buffer + index));
+				index--;
+			}
+		} else if (begin >= 0) {
+			groupList.AddItem(new Group(groupIndex++, begin, index));
+			begin = -1;
+		}
+	}
+
+	// Cut off trailing dots or spaces
+	while (index > 0) {
+		char c = buffer[index - 1];
+		if (c != ' ' && c != '.')
+			break;
+
+		buffer[--index] = '\0';
+	}
+
+	if (begin >= 0)
+		groupList.AddItem(new Group(groupIndex++, begin, index));
+
+	stringBuffer.UnlockBuffer();
+	return stringBuffer;
+}
+
+
+/*static*/ bool
+WindowsRenameAction::_IsInvalidCharacter(char c)
+{
+	if (c <= 0x1f)
+		return true;
+
+	switch (c) {
+		case '"':
+		case '*':
+		case ':':
+		case '<':
+		case '>':
+		case '?':
+		case '\\':
+		case '/':
+		case '|':
+			return true;
+	}
+
+	return false;
+}
 
 //	#pragma mark - PreviewList
 
@@ -593,7 +785,7 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 		owner->DrawString(fRef.name);
 	} else {
 		// Text does match, fill groups in different colors
-		int startIndex = fGroups.CountItems() == 1 ? 0 : 1;
+		int startIndex = 0;//fGroups.CountItems() == 1 ? 0 : 1;
 		_DrawGroupedText(owner, frame, x, fRef.name, fGroups, startIndex);
 	}
 
@@ -712,29 +904,152 @@ PreviewItem::_IsValidName(const char* name) const
 //	#pragma mark -
 
 
+RenameView::RenameView(const char* name)
+	:
+	BView(name, 0)
+{
+}
+
+
+RenameView::~RenameView()
+{
+}
+
+
+//	#pragma mark -
+
+
+RegularExpressionView::RegularExpressionView()
+	:
+	RenameView("regular expression")
+{
+	fPatternControl = new BTextControl("Pattern", NULL, NULL);
+	fPatternControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
+
+	fRenameControl = new BTextControl("Replace with", NULL, NULL);
+	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
+
+	BLayoutBuilder::Grid<>(this, 0.f)
+		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
+		.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
+		.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
+		.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
+		.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1);
+}
+
+
+RegularExpressionView::~RegularExpressionView()
+{
+}
+
+
+RenameAction*
+RegularExpressionView::Action() const
+{
+	RegularExpressionRenameAction* action = new RegularExpressionRenameAction;
+	action->SetPattern(fPatternControl->Text());
+	action->SetReplace(fRenameControl->Text());
+	return action;
+}
+
+
+void
+RegularExpressionView::RequestFocus() const
+{
+	fPatternControl->MakeFocus(true);
+}
+
+
+//	#pragma mark -
+
+
+WindowsRenameView::WindowsRenameView()
+	:
+	RenameView("windows")
+{
+	fReplaceControl = new BTextControl("Replace character", NULL, NULL);
+	fReplaceControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
+	fReplaceControl->SetText("_");
+
+	BLayoutBuilder::Group<>(this, B_VERTICAL)
+		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
+		.AddGrid(0.f)
+			.Add(fReplaceControl->CreateLabelLayoutItem(), 0, 1)
+			.Add(fReplaceControl->CreateTextViewLayoutItem(), 1, 1)
+		.End()
+		.AddGlue();
+}
+
+
+WindowsRenameView::~WindowsRenameView()
+{
+}
+
+
+RenameAction*
+WindowsRenameView::Action() const
+{
+	WindowsRenameAction* action = new WindowsRenameAction();
+	char replaceChar = '\0';
+	if (fReplaceControl->TextLength() > 0)
+		replaceChar = fReplaceControl->Text()[0];
+
+	action->SetReplaceChar(replaceChar);
+	return action;
+}
+
+
+void
+WindowsRenameView::RequestFocus() const
+{
+	fReplaceControl->MakeFocus(true);
+}
+
+
+//	#pragma mark -
+
+
 RenameWindow::RenameWindow(BRect rect)
 	:
 	BWindow(rect, B_TRANSLATE("Rename files"), B_DOCUMENT_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS | B_ASYNCHRONOUS_CONTROLS)
 {
-	fPatternControl = new BTextControl("Regular expression", NULL, NULL);
-	fPatternControl->SetModificationMessage(new BMessage(kMsgUpdateSearch));
-
-	fRenameControl = new BTextControl("Replace with", NULL, NULL);
-	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdateReplace));
-
 	fOkButton = new BButton("ok", "Rename", new BMessage(kMsgRename));
 	fOkButton->SetEnabled(false);
+
+	RenameView* regularExpressionView = fView = new RegularExpressionView();
+	RenameView* windowsRenameView = new WindowsRenameView();
+
+	fActionMenu = new BPopUpMenu("Actions");
+
+	BMessage* message = new BMessage(kMsgSetAction);
+	message->AddInt32("index", 0);
+	BMenuItem* item = new BMenuItem("Regular expression", message);
+	item->SetMarked(true);
+	fActionMenu->AddItem(item);
+
+	message = new BMessage(kMsgSetAction);
+	message->AddInt32("index", 1);
+	item = new BMenuItem("Windows compliant", message);
+	fActionMenu->AddItem(item);
+
+	fActionMenuField = new BMenuField("action", "Rename method", fActionMenu);
+
+	fCardView = new BCardView("action");
+	fCardView->AddChild(regularExpressionView);
+	fCardView->AddChild(windowsRenameView);
+	fCardView->CardLayout()->SetVisibleItem(0L);
 
 	fPreviewList = new PreviewList("preview");
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-		.AddGrid(0.f)
+		.AddGroup(B_VERTICAL)
 			.SetInsets(B_USE_WINDOW_SPACING)
-			.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
-			.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
-			.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
-			.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1)
+			.AddGrid(0.f)
+				.Add(fActionMenuField->CreateLabelLayoutItem(), 0, 0)
+				.Add(fActionMenuField->CreateMenuBarLayoutItem(), 1, 0)
+			.End()
+			.Add(fCardView)
 		.End()
 		.AddGroup(B_HORIZONTAL)
 			.SetInsets(B_USE_DEFAULT_SPACING, 0,
@@ -747,7 +1062,7 @@ RenameWindow::RenameWindow(BRect rect)
 			.Add(new BScrollView("scroller", fPreviewList, 0, true, true))
 		.End();
 
-	fPatternControl->MakeFocus(true);
+	fView->RequestFocus();
 
 	RenameChecker* checker = new RenameChecker();
 	checker->Run();
@@ -798,8 +1113,17 @@ void
 RenameWindow::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
-		case kMsgUpdateSearch:
-		case kMsgUpdateReplace:
+		case kMsgSetAction:
+		{
+			int32 index = message->GetInt32("index", 0);
+			fCardView->CardLayout()->SetVisibleItem(index);
+			fView = dynamic_cast<RenameView*>(
+				fCardView->CardLayout()->VisibleItem()->View());
+
+			// supposed to fall through
+		}
+
+		case kMsgUpdatePreview:
 			_UpdatePreviewItems();
 			break;
 
@@ -837,9 +1161,7 @@ RenameWindow::MessageReceived(BMessage* message)
 void
 RenameWindow::_UpdatePreviewItems()
 {
-	RegularExpressionRenameAction action;
-	action.SetPattern(fPatternControl->Text());
-	action.SetReplace(fRenameControl->Text());
+	RenameAction* action = fView->Action();
 
 	BMessage check(kMsgCheckRename);
 	int errorCount = 0;
@@ -848,7 +1170,7 @@ RenameWindow::_UpdatePreviewItems()
 	for (int32 i = 0; i < fPreviewList->CountItems(); i++) {
 		PreviewItem* item = static_cast<PreviewItem*>(
 			fPreviewList->ItemAt(i));
-		item->SetRenameAction(action);
+		item->SetRenameAction(*action);
 
 		if (item->IsValid()) {
 			if (item->HasTarget()) {
@@ -881,6 +1203,8 @@ RenameWindow::_UpdatePreviewItems()
 		// Check paths on disk
 		fRenameChecker.SendMessage(&check, this);
 	}
+
+	delete action;
 }
 
 
