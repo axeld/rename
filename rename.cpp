@@ -4,6 +4,11 @@
  */
 
 
+#include "rename.h"
+
+#include "RegularExpressionRenameAction.h"
+#include "WindowsRenameAction.h"
+
 #include <Application.h>
 #include <Alert.h>
 #include <Button.h>
@@ -29,7 +34,6 @@
 #include <set>
 
 #include <getopt.h>
-#include <regex.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,7 +46,6 @@ typedef std::set<BString> StringSet;
 static const uint32 kMsgRenameSettings = 'pReS';
 
 static const uint32 kMsgSetAction = 'stAc';
-static const uint32 kMsgUpdatePreview = 'upPv';
 static const uint32 kMsgRename = 'okRe';
 static const uint32 kMsgCheckRename = 'chRe';
 static const uint32 kMsgChecked = 'chkd';
@@ -58,75 +61,6 @@ static rgb_color kGroupColor[] = {
 static const uint32 kGroupColorCount = 5;
 
 #define B_TRANSLATION_CONTEXT "Rename"
-
-#define MAX_GROUPS 10
-#define MAX_MATCHES 20
-
-
-struct Group {
-	int32	index;
-	int32	start;
-	int32	end;
-
-	Group(int32 index, int32 start, int32 end)
-		:
-		index(index),
-		start(start),
-		end(end)
-	{
-	}
-};
-
-
-class RenameAction {
-public:
-	virtual						~RenameAction();
-
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const = 0;
-	virtual BString				Rename(BObjectList<Group>& groups,
-									const char* string) const = 0;
-};
-
-
-class RegularExpressionRenameAction : public RenameAction {
-public:
-								RegularExpressionRenameAction();
-	virtual						~RegularExpressionRenameAction();
-
-			bool				SetPattern(const char* pattern);
-			void				SetReplace(const char* replace);
-
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const;
-	virtual BString				Rename(BObjectList<Group>& groups,
-									const char* string) const;
-
-private:
-			regex_t				fCompiledPattern;
-			bool				fValidPattern;
-			BString				fReplace;
-};
-
-
-class WindowsRenameAction : public RenameAction {
-public:
-								WindowsRenameAction();
-	virtual						~WindowsRenameAction();
-
-			void				SetReplaceChar(char replace);
-
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const;
-	virtual BString				Rename(BObjectList<Group>& groups,
-									const char* string) const;
-
-private:
-	static	bool				_IsInvalidCharacter(char c);
-
-private:
-			char				fReplaceChar;
-};
 
 
 class PreviewList : public BListView {
@@ -191,43 +125,6 @@ private:
 
 typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
 typedef std::map<BString, PreviewItem*> NameMap;
-
-
-class RenameView : public BView {
-public:
-								RenameView(const char* name);
-	virtual						~RenameView();
-
-	virtual	RenameAction*		Action() const = 0;
-	virtual void				RequestFocus() const = 0;
-};
-
-
-class RegularExpressionView : public RenameView {
-public:
-								RegularExpressionView();
-	virtual						~RegularExpressionView();
-
-	virtual	RenameAction*		Action() const;
-	virtual void				RequestFocus() const;
-
-private:
-			BTextControl*		fPatternControl;
-			BTextControl*		fRenameControl;
-};
-
-
-class WindowsRenameView : public RenameView {
-public:
-								WindowsRenameView();
-	virtual						~WindowsRenameView();
-
-	virtual	RenameAction*		Action() const;
-	virtual void				RequestFocus() const;
-
-private:
-			BTextControl*		fReplaceControl;
-};
 
 
 class RenameWindow : public BWindow {
@@ -407,248 +304,6 @@ RenameAction::~RenameAction()
 {
 }
 
-
-//	#pragma mark - RegularExpressionRenameAction
-
-
-RegularExpressionRenameAction::RegularExpressionRenameAction()
-	:
-	fValidPattern(false)
-{
-}
-
-
-RegularExpressionRenameAction::~RegularExpressionRenameAction()
-{
-	if (fValidPattern)
-		regfree(&fCompiledPattern);
-}
-
-
-bool
-RegularExpressionRenameAction::SetPattern(const char* pattern)
-{
-	// TODO: add options for flags
-	int result = regcomp(&fCompiledPattern, pattern, REG_EXTENDED);
-	// TODO: show/report error!
-	fValidPattern = result == 0;
-
-	return fValidPattern;
-}
-
-void
-RegularExpressionRenameAction::SetReplace(const char* replace)
-{
-	fReplace = replace;
-}
-
-
-bool
-RegularExpressionRenameAction::AddGroups(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	if (!fValidPattern)
-		return false;
-
-	regmatch_t groups[MAX_GROUPS];
-
-	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
-		return false;
-
-	for (int groupIndex = 1; groupIndex < MAX_GROUPS; groupIndex++) {
-		if (groups[groupIndex].rm_so == -1)
-			break;
-
-		groupList.AddItem(new Group(groupIndex, groups[groupIndex].rm_so,
-			groups[groupIndex].rm_eo));
-	}
-	if (groupList.IsEmpty())
-		groupList.AddItem(new Group(0, groups[0].rm_so, groups[0].rm_eo));
-
-	return true;
-}
-
-
-BString
-RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	BString stringBuffer;
-	if (!fValidPattern)
-		return stringBuffer;
-
-	regmatch_t groups[MAX_GROUPS];
-	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
-		return stringBuffer;
-
-	stringBuffer = fReplace;
-	if (groups[1].rm_so == -1) {
-		// There is just a single group -- just replace the match
-		stringBuffer.Prepend(string, groups[0].rm_so);
-		stringBuffer.Append(string + groups[0].rm_eo);
-		return stringBuffer;
-	}
-
-	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
-	char* target = buffer;
-
-	for (; target[0] != '\0'; target++) {
-		if (target[0] == '\\' && target[1] > '0' && target[1] <= '9') {
-			// References a group
-			int32 groupIndex = target[1] - '0';
-			int startOffset = groups[groupIndex].rm_so;
-			int endOffset = groups[groupIndex].rm_eo;
-			int length = endOffset - startOffset;
-			if (startOffset < 0 || strlen(buffer) + length - 1
-					> B_FILE_NAME_LENGTH)
-				break;
-
-			memmove(target + length, target + 2, strlen(target) - 1);
-			memmove(target, string + startOffset, length);
-
-			startOffset = target - buffer;
-			groupList.AddItem(new Group(groupIndex, startOffset,
-				startOffset + length));
-
-			target += length - 1;
-		}
-	}
-
-	stringBuffer.UnlockBuffer();
-	return stringBuffer;
-}
-
-
-//	#pragma mark - WindowsRenameAction
-
-
-WindowsRenameAction::WindowsRenameAction()
-	:
-	fReplaceChar('_')
-{
-}
-
-
-WindowsRenameAction::~WindowsRenameAction()
-{
-}
-
-
-void
-WindowsRenameAction::SetReplaceChar(char replace)
-{
-	if (replace == '\0' || !_IsInvalidCharacter(replace))
-		fReplaceChar = replace;
-	else
-		fReplaceChar = '_';
-}
-
-
-bool
-WindowsRenameAction::AddGroups(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	int groupIndex = 1;
-	int begin = -1;
-	int index = 0;
-
-	for (; string[index] != '\0'; index++) {
-		if (_IsInvalidCharacter(string[index])) {
-			if (begin < 0)
-				begin = index;
-		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, index));
-			begin = -1;
-		}
-	}
-
-	if (begin >= 0) {
-		groupList.AddItem(new Group(groupIndex++, begin, index));
-		begin = -1;
-	}
-
-	// Mark trailing dots or spaces
-	int end = index;
-	while (index > 0) {
-		char c = string[index - 1];
-		if (c != ' ' && c != '.')
-			break;
-
-		begin = --index;
-	}
-
-	if (begin >= 0)
-		groupList.AddItem(new Group(groupIndex++, begin, end));
-
-	return groupIndex > 1;
-}
-
-
-BString
-WindowsRenameAction::Rename(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	BString stringBuffer = string;
-	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
-	int groupIndex = 1;
-	int begin = -1;
-	int index = 0;
-
-	for (; buffer[index] != '\0'; index++) {
-		if (_IsInvalidCharacter(buffer[index])) {
-			if (fReplaceChar != '\0') {
-				if (begin < 0)
-					begin = index;
-				buffer[index] = fReplaceChar;
-			} else {
-				memmove(buffer + index, buffer + index + 1,
-					strlen(buffer + index));
-				index--;
-			}
-		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, index));
-			begin = -1;
-		}
-	}
-
-	// Cut off trailing dots or spaces
-	while (index > 0) {
-		char c = buffer[index - 1];
-		if (c != ' ' && c != '.')
-			break;
-
-		buffer[--index] = '\0';
-	}
-
-	if (begin >= 0)
-		groupList.AddItem(new Group(groupIndex++, begin, index));
-
-	stringBuffer.UnlockBuffer();
-	return stringBuffer;
-}
-
-
-/*static*/ bool
-WindowsRenameAction::_IsInvalidCharacter(char c)
-{
-	if (c <= 0x1f)
-		return true;
-
-	switch (c) {
-		case '"':
-		case '*':
-		case ':':
-		case '<':
-		case '>':
-		case '?':
-		case '\\':
-		case '/':
-		case '|':
-			return true;
-	}
-
-	return false;
-}
 
 //	#pragma mark - PreviewList
 
@@ -901,7 +556,7 @@ PreviewItem::_IsValidName(const char* name) const
 }
 
 
-//	#pragma mark -
+//	#pragma mark - RenameView
 
 
 RenameView::RenameView(const char* name)
@@ -916,97 +571,7 @@ RenameView::~RenameView()
 }
 
 
-//	#pragma mark -
-
-
-RegularExpressionView::RegularExpressionView()
-	:
-	RenameView("regular expression")
-{
-	fPatternControl = new BTextControl("Pattern", NULL, NULL);
-	fPatternControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
-
-	fRenameControl = new BTextControl("Replace with", NULL, NULL);
-	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
-
-	BLayoutBuilder::Grid<>(this, 0.f)
-		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
-		.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
-		.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
-		.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
-		.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1);
-}
-
-
-RegularExpressionView::~RegularExpressionView()
-{
-}
-
-
-RenameAction*
-RegularExpressionView::Action() const
-{
-	RegularExpressionRenameAction* action = new RegularExpressionRenameAction;
-	action->SetPattern(fPatternControl->Text());
-	action->SetReplace(fRenameControl->Text());
-	return action;
-}
-
-
-void
-RegularExpressionView::RequestFocus() const
-{
-	fPatternControl->MakeFocus(true);
-}
-
-
-//	#pragma mark -
-
-
-WindowsRenameView::WindowsRenameView()
-	:
-	RenameView("windows")
-{
-	fReplaceControl = new BTextControl("Replace character", NULL, NULL);
-	fReplaceControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
-	fReplaceControl->SetText("_");
-
-	BLayoutBuilder::Group<>(this, B_VERTICAL)
-		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
-		.AddGrid(0.f)
-			.Add(fReplaceControl->CreateLabelLayoutItem(), 0, 1)
-			.Add(fReplaceControl->CreateTextViewLayoutItem(), 1, 1)
-		.End()
-		.AddGlue();
-}
-
-
-WindowsRenameView::~WindowsRenameView()
-{
-}
-
-
-RenameAction*
-WindowsRenameView::Action() const
-{
-	WindowsRenameAction* action = new WindowsRenameAction();
-	char replaceChar = '\0';
-	if (fReplaceControl->TextLength() > 0)
-		replaceChar = fReplaceControl->Text()[0];
-
-	action->SetReplaceChar(replaceChar);
-	return action;
-}
-
-
-void
-WindowsRenameView::RequestFocus() const
-{
-	fReplaceControl->MakeFocus(true);
-}
-
-
-//	#pragma mark -
+//	#pragma mark - RenameWindow
 
 
 RenameWindow::RenameWindow(BRect rect)
@@ -1230,7 +795,7 @@ RenameWindow::_RenameFiles()
 }
 
 
-//	#pragma mark -
+//	#pragma mark - RenameChecker
 
 
 RenameChecker::RenameChecker()
