@@ -16,7 +16,7 @@ public:
 								WindowsRenameAction();
 	virtual						~WindowsRenameAction();
 
-			void				SetReplaceChar(char replace);
+			void				SetReplaceString(const char* replace);
 
 	virtual	bool				AddGroups(BObjectList<Group>& groups,
 									const char* string) const;
@@ -27,7 +27,7 @@ private:
 	static	bool				_IsInvalidCharacter(char c);
 
 private:
-			char				fReplaceChar;
+			BString				fReplaceString;
 };
 
 

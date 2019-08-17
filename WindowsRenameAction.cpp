@@ -16,7 +16,7 @@
 
 WindowsRenameAction::WindowsRenameAction()
 	:
-	fReplaceChar('_')
+	fReplaceString("_")
 {
 }
 
@@ -27,12 +27,29 @@ WindowsRenameAction::~WindowsRenameAction()
 
 
 void
-WindowsRenameAction::SetReplaceChar(char replace)
+WindowsRenameAction::SetReplaceString(const char* replace)
 {
-	if (replace == '\0' || !_IsInvalidCharacter(replace))
-		fReplaceChar = replace;
+	if (replace == NULL || replace[0] == '\0') {
+		fReplaceString = "";
+		return;
+	}
+
+	// Filter out invalid characters from the replace string
+	BString name(replace);
+	int32 length = name.CountChars();
+	for (int32 index = 0; index < length; index++) {
+		int32 charSize;
+		const char* pos = name.CharAt(index, &charSize);
+		if (charSize == 1 && _IsInvalidCharacter(pos[0])) {
+			name.RemoveChars(index--, 1);
+			length--;
+		}
+	}
+
+	if (name.IsEmpty())
+		fReplaceString = "_";
 	else
-		fReplaceChar = '_';
+		fReplaceString = name;
 }
 
 
@@ -91,7 +108,6 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 {
 	BString stringBuffer = string;
 	int32 length = stringBuffer.CountChars();
-	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
 	int groupIndex = 1;
 	int begin = -1;
 	int index = 0;
@@ -99,19 +115,18 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 
 	for (; index < length; index++) {
 		int32 charSize;
-		char* pos = const_cast<char*>(stringBuffer.CharAt(index, &charSize));
+		const char* pos = stringBuffer.CharAt(index, &charSize);
 		if (charSize == 1 && _IsInvalidCharacter(pos[0])) {
-			if (fReplaceChar != '\0') {
-				if (begin < 0)
-					begin = byteIndex;
-				buffer[byteIndex] = fReplaceChar;
-			} else {
-				memmove(buffer + byteIndex, buffer + byteIndex + 1,
-					strlen(buffer + byteIndex));
-				byteIndex--;
-				index--;
-				length--;
-			}
+			stringBuffer.Remove(byteIndex, charSize);
+			stringBuffer.Insert(fReplaceString, byteIndex);
+
+			if (!fReplaceString.IsEmpty())
+				begin = byteIndex;
+
+			byteIndex += fReplaceString.Length() - charSize;
+			int32 diff = fReplaceString.CountChars() - 1;
+			index += diff;
+			length += diff;
 		} else if (begin >= 0) {
 			groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
 			begin = -1;
@@ -129,10 +144,9 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 		if (charSize != 1 || pos[0] != ' ' && pos[0] != '.')
 			break;
 
-		pos[0] = '\0';
+		stringBuffer.TruncateChars(index);
 	}
 
-	stringBuffer.UnlockBuffer();
 	return stringBuffer;
 }
 
@@ -190,11 +204,8 @@ RenameAction*
 WindowsRenameView::Action() const
 {
 	WindowsRenameAction* action = new WindowsRenameAction();
-	char replaceChar = '\0';
-	if (fReplaceControl->TextLength() > 0)
-		replaceChar = fReplaceControl->Text()[0];
+	action->SetReplaceString(fReplaceControl->Text());
 
-	action->SetReplaceChar(replaceChar);
 	return action;
 }
 
