@@ -70,6 +70,7 @@ public:
 								PreviewList(const char* name);
 
 	virtual	void				Draw(BRect updateRect);
+	virtual void				KeyDown(const char* bytes, int32 numBytes);
 };
 
 
@@ -319,7 +320,7 @@ RenameAction::~RenameAction()
 
 PreviewList::PreviewList(const char* name)
 	:
-	BListView(name, B_SINGLE_SELECTION_LIST,
+	BListView(name, B_MULTIPLE_SELECTION_LIST,
 		B_FULL_UPDATE_ON_RESIZE | B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE)
 {
 }
@@ -336,6 +337,23 @@ PreviewList::Draw(BRect updateRect)
 		StrokeLine(BPoint(rect.right, rect.top),
 			BPoint(rect.right, rect.bottom));
 	}
+}
+
+
+void
+PreviewList::KeyDown(const char* bytes, int32 numBytes)
+{
+	if (bytes[0] == B_DELETE) {
+		// Remove selected entries
+		while (true) {
+			int32 selectedIndex = CurrentSelection(0);
+			if (selectedIndex < 0)
+				break;
+
+			delete RemoveItem(selectedIndex);
+		}
+	} else
+		BListView::KeyDown(bytes, numBytes);
 }
 
 
@@ -812,6 +830,8 @@ RenameWindow::_RenameFiles()
 	for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
 		PreviewItem* item = static_cast<PreviewItem*>(
 			fPreviewList->ItemAt(index));
+		if (!item->HasTarget())
+			continue;
 
 		status_t status = item->Rename();
 		if (status != B_OK) {
