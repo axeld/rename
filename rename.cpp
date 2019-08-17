@@ -51,6 +51,7 @@ static const uint32 kMsgSetAction = 'stAc';
 static const uint32 kMsgRename = 'okRe';
 static const uint32 kMsgProcessAndCheckRename = 'pchR';
 static const uint32 kMsgProcessed = 'prcd';
+static const uint32 kMsgRemoveUnchanged = 'rmUn';
 
 
 static rgb_color kGroupColor[] = {
@@ -63,15 +64,6 @@ static rgb_color kGroupColor[] = {
 static const uint32 kGroupColorCount = 5;
 
 #define B_TRANSLATION_CONTEXT "Rename"
-
-
-class PreviewList : public BListView {
-public:
-								PreviewList(const char* name);
-
-	virtual	void				Draw(BRect updateRect);
-	virtual void				KeyDown(const char* bytes, int32 numBytes);
-};
 
 
 enum Error {
@@ -131,6 +123,25 @@ typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
 typedef std::map<BString, PreviewItem*> NameMap;
 
 
+class PreviewList : public BListView {
+public:
+								PreviewList(const char* name);
+
+			void				AddRef(const entry_ref& ref);
+			bool				HasRef(const entry_ref& ref) const;
+			void				UpdateRef(const entry_ref& oldRef,
+									PreviewItem* item);
+			PreviewItem*		ItemForRef(const entry_ref& ref);
+			void				RemoveUnchanged();
+
+	virtual	void				Draw(BRect updateRect);
+	virtual void				KeyDown(const char* bytes, int32 numBytes);
+
+private:
+			PreviewItemMap		fPreviewItemMap;
+};
+
+
 class RenameWindow : public BWindow {
 public:
 								RenameWindow(BRect rect);
@@ -151,8 +162,8 @@ private:
 			BCardView*			fCardView;
 			RenameView*			fView;
 			BButton*			fOkButton;
-			BListView*			fPreviewList;
-			PreviewItemMap		fPreviewItemMap;
+			BButton*			fRemoveUnchangedButton;
+			PreviewList*		fPreviewList;
 			BMessenger			fRenameProcessor;
 };
 
@@ -327,6 +338,58 @@ PreviewList::PreviewList(const char* name)
 
 
 void
+PreviewList::AddRef(const entry_ref& ref)
+{
+	PreviewItem* item = new PreviewItem(ref);
+	fPreviewItemMap.insert(std::make_pair(ref, item));
+
+	AddItem(item);
+	SortItems(&PreviewItem::Compare);
+}
+
+
+bool
+PreviewList::HasRef(const entry_ref& ref) const
+{
+	PreviewItemMap::const_iterator found = fPreviewItemMap.find(ref);
+	return found != fPreviewItemMap.end();
+}
+
+
+void
+PreviewList::UpdateRef(const entry_ref& oldRef, PreviewItem* item)
+{
+	fPreviewItemMap.erase(oldRef);
+	fPreviewItemMap.insert(std::make_pair(item->Ref(), item));
+}
+
+
+PreviewItem*
+PreviewList::ItemForRef(const entry_ref& ref)
+{
+	PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
+	if (found != fPreviewItemMap.end())
+		return found->second;
+
+	return NULL;
+}
+
+
+void
+PreviewList::RemoveUnchanged()
+{
+	for (int32 index = 0; index < CountItems(); index++) {
+		PreviewItem* item = static_cast<PreviewItem*>(ItemAt(index));
+		if (!item->HasTarget()) {
+			fPreviewItemMap.erase(item->Ref());
+			delete RemoveItem(index);
+			index--;
+		}
+	}
+}
+
+
+void
 PreviewList::Draw(BRect updateRect)
 {
 	BListView::Draw(updateRect);
@@ -350,6 +413,9 @@ PreviewList::KeyDown(const char* bytes, int32 numBytes)
 			if (selectedIndex < 0)
 				break;
 
+			PreviewItem* item = static_cast<PreviewItem*>(
+				ItemAt(selectedIndex));
+			fPreviewItemMap.erase(item->Ref());
 			delete RemoveItem(selectedIndex);
 		}
 	} else
@@ -618,6 +684,10 @@ RenameWindow::RenameWindow(BRect rect)
 	fOkButton = new BButton("ok", "Rename", new BMessage(kMsgRename));
 	fOkButton->SetEnabled(false);
 
+	fRemoveUnchangedButton = new BButton("remove", "Remove unchanged",
+		new BMessage(kMsgRemoveUnchanged));
+	fRemoveUnchangedButton->SetEnabled(false);
+
 	RenameView* regularExpressionView = fView = new RegularExpressionView();
 	RenameView* windowsRenameView = new WindowsRenameView();
 
@@ -656,6 +726,7 @@ RenameWindow::RenameWindow(BRect rect)
 			.SetInsets(B_USE_DEFAULT_SPACING, 0,
 				B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
 			.AddGlue()
+			.Add(fRemoveUnchangedButton)
 			.Add(fOkButton)
 		.End()
 		.AddGroup(B_VERTICAL)
@@ -684,17 +755,12 @@ RenameWindow::~RenameWindow()
 void
 RenameWindow::AddRef(const entry_ref& ref)
 {
-	PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
-	if (found != fPreviewItemMap.end()) {
+	if (fPreviewList->HasRef(ref)) {
 		// Ignore duplicate entry
 		return;
 	}
 
-	PreviewItem* item = new PreviewItem(ref);
-	fPreviewItemMap.insert(std::make_pair(ref, item));
-
-	fPreviewList->AddItem(item);
-	fPreviewList->SortItems(&PreviewItem::Compare);
+	fPreviewList->AddRef(ref);
 }
 
 
@@ -739,18 +805,18 @@ RenameWindow::MessageReceived(BMessage* message)
 				if (message->FindRef("target", index, &target) != B_OK)
 					continue;
 
-				PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
-				if (found != fPreviewItemMap.end()) {
-					found->second->SetTargetRef(target);
+				PreviewItem* item = fPreviewList->ItemForRef(ref);
+				if (item != NULL) {
+					item->SetTargetRef(target);
 					processedCount++;
 				}
 			}
 
 			for (int32 index = 0; message->FindRef("refs", index, &ref)
 					== B_OK; index++) {
-				PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
-				if (found != fPreviewItemMap.end()) {
-					found->second->SetError(EXISTS);
+				PreviewItem* item = fPreviewList->ItemForRef(ref);
+				if (item != NULL) {
+					item->SetError(EXISTS);
 					errorCount++;
 				}
 			}
@@ -758,6 +824,25 @@ RenameWindow::MessageReceived(BMessage* message)
 				fPreviewList->Invalidate();
 			if (errorCount == 0)
 				fOkButton->SetEnabled(true);
+
+			// Check if there are any unchanged entries
+			bool unchanged = false;
+			for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
+				PreviewItem* item = static_cast<PreviewItem*>(
+					fPreviewList->ItemAt(index));
+				if (!item->HasTarget()) {
+					unchanged = true;
+					break;
+				}
+			}
+			fRemoveUnchangedButton->SetEnabled(unchanged);
+			break;
+		}
+
+		case kMsgRemoveUnchanged:
+		{
+			fPreviewList->RemoveUnchanged();
+			fRemoveUnchangedButton->SetEnabled(false);
 			break;
 		}
 
@@ -817,7 +902,8 @@ RenameWindow::_UpdatePreviewItems()
 	if (errorCount == 0 && validCount > 0) {
 		// Check paths on disk
 		fRenameProcessor.SendMessage(&check, this);
-	}
+	} else if (fPreviewList->CountItems() > 0)
+		fRemoveUnchangedButton->SetEnabled(true);
 
 	delete action;
 }
@@ -826,12 +912,13 @@ RenameWindow::_UpdatePreviewItems()
 void
 RenameWindow::_RenameFiles()
 {
-	fPreviewItemMap.clear();
 	for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
 		PreviewItem* item = static_cast<PreviewItem*>(
 			fPreviewList->ItemAt(index));
 		if (!item->HasTarget())
 			continue;
+
+		entry_ref originalRef = item->Ref();
 
 		status_t status = item->Rename();
 		if (status != B_OK) {
@@ -839,7 +926,7 @@ RenameWindow::_RenameFiles()
 			fprintf(stderr, "Renaming failed: %s\n", strerror(status));
 		}
 
-		fPreviewItemMap.insert(std::make_pair(item->Ref(), item));
+		fPreviewList->UpdateRef(originalRef, item);
 	}
 
 	fPreviewList->SortItems(&PreviewItem::Compare);
