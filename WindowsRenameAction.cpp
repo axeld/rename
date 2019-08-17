@@ -11,8 +11,6 @@
 #include <TextControl.h>
 
 
-
-
 //	#pragma mark - WindowsRenameAction
 
 
@@ -42,33 +40,42 @@ bool
 WindowsRenameAction::AddGroups(BObjectList<Group>& groupList,
 	const char* string) const
 {
+	BString text(string);
+	int32 length = text.CountChars();
 	int groupIndex = 1;
 	int begin = -1;
 	int index = 0;
+	int byteIndex = 0;
 
-	for (; string[index] != '\0'; index++) {
-		if (_IsInvalidCharacter(string[index])) {
+	for (; index < length; index++) {
+		int32 charSize;
+		const char* pos = text.CharAt(index, &charSize);
+
+		if (charSize == 1 && _IsInvalidCharacter(pos[0])) {
 			if (begin < 0)
-				begin = index;
+				begin = byteIndex;
 		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, index));
+			groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
 			begin = -1;
 		}
+		byteIndex += charSize;
 	}
 
 	if (begin >= 0) {
-		groupList.AddItem(new Group(groupIndex++, begin, index));
+		groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
 		begin = -1;
 	}
 
 	// Mark trailing dots or spaces
-	int end = index;
-	while (index > 0) {
-		char c = string[index - 1];
-		if (c != ' ' && c != '.')
+	int end = byteIndex;
+	while (--index > 0) {
+		int32 charSize;
+		const char* pos = text.CharAt(index, &charSize);
+		if (charSize != 1 || pos[0] != ' ' && pos[0] != '.')
 			break;
 
-		begin = --index;
+		byteIndex -= charSize;
+		begin = byteIndex;
 	}
 
 	if (begin >= 0)
@@ -83,39 +90,47 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 	const char* string) const
 {
 	BString stringBuffer = string;
+	int32 length = stringBuffer.CountChars();
 	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
 	int groupIndex = 1;
 	int begin = -1;
 	int index = 0;
+	int byteIndex = 0;
 
-	for (; buffer[index] != '\0'; index++) {
-		if (_IsInvalidCharacter(buffer[index])) {
+	for (; index < length; index++) {
+		int32 charSize;
+		char* pos = const_cast<char*>(stringBuffer.CharAt(index, &charSize));
+		if (charSize == 1 && _IsInvalidCharacter(pos[0])) {
 			if (fReplaceChar != '\0') {
 				if (begin < 0)
-					begin = index;
-				buffer[index] = fReplaceChar;
+					begin = byteIndex;
+				buffer[byteIndex] = fReplaceChar;
 			} else {
-				memmove(buffer + index, buffer + index + 1,
-					strlen(buffer + index));
+				memmove(buffer + byteIndex, buffer + byteIndex + 1,
+					strlen(buffer + byteIndex));
+				byteIndex--;
 				index--;
+				length--;
 			}
 		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, index));
+			groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
 			begin = -1;
 		}
-	}
-
-	// Cut off trailing dots or spaces
-	while (index > 0) {
-		char c = buffer[index - 1];
-		if (c != ' ' && c != '.')
-			break;
-
-		buffer[--index] = '\0';
+		byteIndex += charSize;
 	}
 
 	if (begin >= 0)
-		groupList.AddItem(new Group(groupIndex++, begin, index));
+		groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
+
+	// Cut off trailing dots or spaces
+	while (--index > 0) {
+		int32 charSize;
+		char* pos = const_cast<char*>(stringBuffer.CharAt(index, &charSize));
+		if (charSize != 1 || pos[0] != ' ' && pos[0] != '.')
+			break;
+
+		pos[0] = '\0';
+	}
 
 	stringBuffer.UnlockBuffer();
 	return stringBuffer;
