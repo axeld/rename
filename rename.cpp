@@ -30,6 +30,8 @@
 #include <Directory.h>
 #include <FindDirectory.h>
 
+#include <fs_attr.h>
+
 #include <map>
 #include <set>
 
@@ -47,8 +49,8 @@ static const uint32 kMsgRenameSettings = 'pReS';
 
 static const uint32 kMsgSetAction = 'stAc';
 static const uint32 kMsgRename = 'okRe';
-static const uint32 kMsgCheckRename = 'chRe';
-static const uint32 kMsgChecked = 'chkd';
+static const uint32 kMsgProcessAndCheckRename = 'pchR';
+static const uint32 kMsgProcessed = 'prcd';
 
 
 static rgb_color kGroupColor[] = {
@@ -90,6 +92,7 @@ public:
 									{ return fRef; }
 			const entry_ref&	TargetRef() const
 									{ return fTargetRef; }
+			void				SetTargetRef(const entry_ref& target);
 			bool				HasTarget() const
 									{ return fTargetRef.name != NULL
 										&& fTargetRef.name[0] != '\0'; }
@@ -149,19 +152,25 @@ private:
 			BButton*			fOkButton;
 			BListView*			fPreviewList;
 			PreviewItemMap		fPreviewItemMap;
-			BMessenger			fRenameChecker;
+			BMessenger			fRenameProcessor;
 };
 
 
-class RenameChecker : public BLooper {
+class RenameProcessor : public BLooper {
 public:
-								RenameChecker();
+								RenameProcessor();
 
 	virtual	void				MessageReceived(BMessage* message);
 
 private:
+			bool				_ProcessRef(const entry_ref& ref,
+									entry_ref& targetRef);
 			bool				_CheckRef(const entry_ref& ref,
 									const entry_ref& targetRef);
+			BString				_ReadAttribute(const entry_ref& ref,
+									const char* name);
+			int					_Extract(const char* buffer, int length,
+									char open, BString& expression);
 };
 
 
@@ -346,6 +355,13 @@ PreviewItem::PreviewItem(const entry_ref& ref)
 
 
 void
+PreviewItem::SetTargetRef(const entry_ref& target)
+{
+	fTargetRef = target;
+}
+
+
+void
 PreviewItem::SetRenameAction(const RenameAction& action)
 {
 	fGroups.MakeEmpty();
@@ -357,6 +373,8 @@ PreviewItem::SetRenameAction(const RenameAction& action)
 	BString newName = action.Rename(fRenameGroups, fRef.name);
 	if (newName != fRef.name)
 		fTargetRef.set_name(newName.String());
+	else
+		fTargetRef.set_name(NULL);
 
 	if (HasTarget() && !_IsValidName(fTargetRef.name))
 		fError = INVALID_NAME;
@@ -629,17 +647,17 @@ RenameWindow::RenameWindow(BRect rect)
 
 	fView->RequestFocus();
 
-	RenameChecker* checker = new RenameChecker();
-	checker->Run();
+	RenameProcessor* processor = new RenameProcessor();
+	processor->Run();
 
-	fRenameChecker = checker;
+	fRenameProcessor = processor;
 }
 
 
 RenameWindow::~RenameWindow()
 {
 	gWindowFrame = Frame();
-	fRenameChecker.SendMessage(B_QUIT_REQUESTED);
+	fRenameProcessor.SendMessage(B_QUIT_REQUESTED);
 
 	saveSettings();
 }
@@ -692,21 +710,35 @@ RenameWindow::MessageReceived(BMessage* message)
 			_UpdatePreviewItems();
 			break;
 
-		case kMsgChecked:
+		case kMsgProcessed:
 		{
+			int32 processedCount = 0;
 			int32 errorCount = 0;
 			entry_ref ref;
-			int32 index = 0;
-			for (; message->FindRef("refs", index, &ref) == B_OK; index++) {
+			for (int32 index = 0; message->FindRef("processed", index, &ref)
+					== B_OK; index++) {
+				entry_ref target;
+				if (message->FindRef("target", index, &target) != B_OK)
+					continue;
+
+				PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
+				if (found != fPreviewItemMap.end()) {
+					found->second->SetTargetRef(target);
+					processedCount++;
+				}
+			}
+
+			for (int32 index = 0; message->FindRef("refs", index, &ref)
+					== B_OK; index++) {
 				PreviewItemMap::iterator found = fPreviewItemMap.find(ref);
 				if (found != fPreviewItemMap.end()) {
 					found->second->SetError(EXISTS);
 					errorCount++;
 				}
 			}
-			if (errorCount != 0)
+			if (errorCount != 0 || processedCount != 0)
 				fPreviewList->Invalidate();
-			else
+			if (errorCount == 0)
 				fOkButton->SetEnabled(true);
 			break;
 		}
@@ -728,7 +760,7 @@ RenameWindow::_UpdatePreviewItems()
 {
 	RenameAction* action = fView->Action();
 
-	BMessage check(kMsgCheckRename);
+	BMessage check(kMsgProcessAndCheckRename);
 	int errorCount = 0;
 	int validCount = 0;
 	NameMap map;
@@ -766,7 +798,7 @@ RenameWindow::_UpdatePreviewItems()
 
 	if (errorCount == 0 && validCount > 0) {
 		// Check paths on disk
-		fRenameChecker.SendMessage(&check, this);
+		fRenameProcessor.SendMessage(&check, this);
 	}
 
 	delete action;
@@ -795,24 +827,23 @@ RenameWindow::_RenameFiles()
 }
 
 
-//	#pragma mark - RenameChecker
+//	#pragma mark - RenameProcessor
 
 
-RenameChecker::RenameChecker()
+RenameProcessor::RenameProcessor()
 	:
-	BLooper("Rename checker")
+	BLooper("Rename processor")
 {
 }
 
 
 void
-RenameChecker::MessageReceived(BMessage* message)
+RenameProcessor::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
-		case kMsgCheckRename:
+		case kMsgProcessAndCheckRename:
 		{
-			BMessage reply(kMsgChecked);
-			int32 count = 0;
+			BMessage reply(kMsgProcessed);
 
 			entry_ref ref;
 			int32 index;
@@ -820,10 +851,12 @@ RenameChecker::MessageReceived(BMessage* message)
 					index++) {
 				entry_ref targetRef;
 				if (message->FindRef("target", index, &targetRef) == B_OK) {
-					if (!_CheckRef(ref, targetRef)) {
-						reply.AddRef("refs", &ref);
-						count++;
+					if (_ProcessRef(ref, targetRef)) {
+						reply.AddRef("processed", &ref);
+						reply.AddRef("target", &targetRef);
 					}
+					if (!_CheckRef(ref, targetRef))
+						reply.AddRef("refs", &ref);
 				}
 			}
 
@@ -839,10 +872,162 @@ RenameChecker::MessageReceived(BMessage* message)
 
 
 bool
-RenameChecker::_CheckRef(const entry_ref& ref, const entry_ref& targetRef)
+RenameProcessor::_ProcessRef(const entry_ref& ref, entry_ref& targetRef)
+{
+	BString name(targetRef.name);
+	int length = name.Length();
+	char* buffer = name.LockBuffer(B_FILE_NAME_LENGTH);
+	bool changed = false;
+
+	for (int index = 0; index < length - 3; index++) {
+		if (buffer[index] == '$') {
+			char open = buffer[index + 1];
+			BString expression;
+			int expressionLength = -1;
+			if (open == '(' || open == '[') {
+				expressionLength = _Extract(buffer + index + 2,
+					length - index - 2, open, expression);
+			}
+
+			BString result;
+
+			if (expressionLength > 0 && open == '(') {
+				// bash script
+				// TODO!
+				result = "bash";
+				changed = true;
+			} else if (expressionLength > 0 && open == '[') {
+				// Attribute replacement
+				result = _ReadAttribute(ref, expression.String());
+				changed = true;
+			}
+
+			if (changed) {
+				name.Remove(index, expressionLength + 3);
+				name.Insert(result, index);
+				index += result.Length();
+				length = name.Length();
+			}
+		}
+	}
+
+	name.UnlockBuffer();
+
+	if (changed)
+		targetRef.set_name(name.String());
+
+	return changed;
+}
+
+
+bool
+RenameProcessor::_CheckRef(const entry_ref& ref, const entry_ref& targetRef)
 {
 	BEntry entry(&targetRef);
 	return !entry.Exists();
+}
+
+
+BString
+RenameProcessor::_ReadAttribute(const entry_ref& ref, const char* name)
+{
+	BNode node(&ref);
+	status_t status = node.InitCheck();
+	if (status != B_OK)
+		return "";
+
+	attr_info info;
+	status = node.GetAttrInfo(name, &info);
+	if (status != B_OK)
+		return "";
+
+	char buffer[1024];
+	off_t size = info.size;
+	if (size > sizeof(buffer))
+		size = sizeof(buffer);
+
+	ssize_t bytesRead = node.ReadAttr(name, info.type, 0, buffer, size);
+	if (bytesRead != size)
+		return "";
+
+	// Taken over from Haiku's listattr.cpp
+	BString result;
+	switch (info.type) {
+		case B_INT8_TYPE:
+			result.SetToFormat("%" B_PRId8, *((int8 *)buffer));
+			break;
+		case B_UINT8_TYPE:
+			result.SetToFormat("%" B_PRIu8, *((uint8 *)buffer));
+			break;
+		case B_INT16_TYPE:
+			result.SetToFormat("%" B_PRId16, *((int16 *)buffer));
+			break;
+		case B_UINT16_TYPE:
+			result.SetToFormat("%" B_PRIu16, *((uint16 *)buffer));
+			break;
+		case B_INT32_TYPE:
+			result.SetToFormat("%" B_PRId32, *((int32 *)buffer));
+			break;
+		case B_UINT32_TYPE:
+			result.SetToFormat("%" B_PRIu32, *((uint32 *)buffer));
+			break;
+		case B_INT64_TYPE:
+			result.SetToFormat("%" B_PRId64, *((int64 *)buffer));
+			break;
+		case B_UINT64_TYPE:
+			result.SetToFormat("%" B_PRIu64, *((uint64 *)buffer));
+			break;
+		case B_FLOAT_TYPE:
+			result.SetToFormat("%f", *((float *)buffer));
+			break;
+		case B_DOUBLE_TYPE:
+			result.SetToFormat("%f", *((double *)buffer));
+			break;
+		case B_BOOL_TYPE:
+			result.SetToFormat("%d", *((unsigned char *)buffer));
+			break;
+		case B_TIME_TYPE:
+		{
+			char stringBuffer[256];
+			struct tm timeInfo;
+			localtime_r((time_t *)buffer, &timeInfo);
+			strftime(stringBuffer, sizeof(stringBuffer), "%c", &timeInfo);
+			result.SetToFormat("%s", stringBuffer);
+			break;
+		}
+		case B_STRING_TYPE:
+		case B_MIME_STRING_TYPE:
+		case 'MSIG':
+		case 'MSDC':
+		case 'MPTH':
+			result.SetToFormat("%s", buffer);
+			break;
+	}
+	return result;
+}
+
+
+int
+RenameProcessor::_Extract(const char* buffer, int length, char open,
+	BString& expression)
+{
+	// Find end
+	char close = open == '(' ? ')' : ']';
+	int level = 0;
+	for (int index = 0; index < length; index++) {
+		if (buffer[index] == open)
+			level++;
+		else if (buffer[index] == close) {
+			level--;
+			if (level < 0) {
+				// Extract expression
+				expression.SetTo(buffer, index);
+				return index;
+			}
+		}
+	}
+
+	return -1;
 }
 
 
