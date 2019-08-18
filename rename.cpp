@@ -14,6 +14,7 @@
 #include <Button.h>
 #include <Catalog.h>
 #include <CardView.h>
+#include <CheckBox.h>
 #include <ControlLook.h>
 #include <LayoutBuilder.h>
 #include <ListView.h>
@@ -52,6 +53,7 @@ static const uint32 kMsgRename = 'okRe';
 static const uint32 kMsgProcessAndCheckRename = 'pchR';
 static const uint32 kMsgProcessed = 'prcd';
 static const uint32 kMsgRemoveUnchanged = 'rmUn';
+static const uint32 kMsgRecursive = 'recu';
 
 
 static rgb_color kGroupColor[] = {
@@ -163,6 +165,7 @@ private:
 			RenameView*			fView;
 			BButton*			fOkButton;
 			BButton*			fRemoveUnchangedButton;
+			BCheckBox*			fRecursiveCheckBox;
 			PreviewList*		fPreviewList;
 			BMessenger			fRenameProcessor;
 };
@@ -688,6 +691,9 @@ RenameWindow::RenameWindow(BRect rect)
 		new BMessage(kMsgRemoveUnchanged));
 	fRemoveUnchangedButton->SetEnabled(false);
 
+	fRecursiveCheckBox = new BCheckBox("recursive",
+		"Enter directories recursively", new BMessage(kMsgRecursive));
+
 	RenameView* regularExpressionView = fView = new RegularExpressionView();
 	RenameView* windowsRenameView = new WindowsRenameView();
 
@@ -725,6 +731,7 @@ RenameWindow::RenameWindow(BRect rect)
 		.AddGroup(B_HORIZONTAL)
 			.SetInsets(B_USE_DEFAULT_SPACING, 0,
 				B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
+			.Add(fRecursiveCheckBox)
 			.AddGlue()
 			.Add(fRemoveUnchangedButton)
 			.Add(fOkButton)
@@ -761,6 +768,19 @@ RenameWindow::AddRef(const entry_ref& ref)
 	}
 
 	fPreviewList->AddRef(ref);
+
+	if (fRecursiveCheckBox->Value() == B_CONTROL_ON) {
+		BEntry entry(&ref);
+		if (entry.IsDirectory()) {
+			BDirectory directory(&ref);
+			BEntry child;
+			while (directory.GetNextEntry(&child) == B_OK) {
+				entry_ref childRef;
+				if (child.GetRef(&childRef) == B_OK)
+					fPreviewList->AddRef(childRef);
+			}
+		}
+	}
 }
 
 
