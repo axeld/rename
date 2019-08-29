@@ -88,7 +88,7 @@ WindowsRenameAction::AddGroups(BObjectList<Group>& groupList,
 	while (--index > 0) {
 		int32 charSize;
 		const char* pos = text.CharAt(index, &charSize);
-		if (charSize != 1 || pos[0] != ' ' && pos[0] != '.')
+		if (charSize != 1 || (pos[0] != ' ' && pos[0] != '.'))
 			break;
 
 		byteIndex -= charSize;
@@ -141,7 +141,7 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 	while (--index > 0) {
 		int32 charSize;
 		char* pos = const_cast<char*>(stringBuffer.CharAt(index, &charSize));
-		if (charSize != 1 || pos[0] != ' ' && pos[0] != '.')
+		if (charSize != 1 || (pos[0] != ' ' && pos[0] != '.'))
 			break;
 
 		stringBuffer.TruncateChars(index);

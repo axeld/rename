@@ -6,6 +6,7 @@
 
 #include "rename.h"
 
+#include "RefModel.h"
 #include "RegularExpressionRenameAction.h"
 #include "WindowsRenameAction.h"
 
@@ -34,6 +35,7 @@
 #include <fs_attr.h>
 
 #include <map>
+#include <new>
 #include <set>
 
 #include <getopt.h>
@@ -42,7 +44,6 @@
 #include <string.h>
 
 
-typedef std::set<entry_ref> EntrySet;
 typedef std::set<BString> StringSet;
 
 
@@ -53,6 +54,7 @@ static const uint32 kMsgRename = 'okRe';
 static const uint32 kMsgProcessAndCheckRename = 'pchR';
 static const uint32 kMsgProcessed = 'prcd';
 static const uint32 kMsgRemoveUnchanged = 'rmUn';
+static const uint32 kMsgRefsRemoved = 'rfrm';
 static const uint32 kMsgRecursive = 'recu';
 
 
@@ -137,6 +139,7 @@ public:
 			void				RemoveUnchanged();
 
 	virtual	void				Draw(BRect updateRect);
+	virtual	void				MessageReceived(BMessage* message);
 	virtual void				KeyDown(const char* bytes, int32 numBytes);
 
 private:
@@ -167,6 +170,7 @@ private:
 			BButton*			fRemoveUnchangedButton;
 			BCheckBox*			fRecursiveCheckBox;
 			PreviewList*		fPreviewList;
+			RefModel*			fRefModel;
 			BMessenger			fRenameProcessor;
 };
 
@@ -407,6 +411,43 @@ PreviewList::Draw(BRect updateRect)
 
 
 void
+PreviewList::MessageReceived(BMessage* message)
+{
+	switch (message->what) {
+		case kMsgUpdateRefs:
+		{
+			BList items;
+			entry_ref ref;
+			for (int32 index = 0; message->FindRef("add", index, &ref) == B_OK;
+					index++) {
+				if (!HasRef(ref)) {
+					PreviewItem* item = new PreviewItem(ref);
+					fPreviewItemMap.insert(std::make_pair(ref, item));
+					items.AddItem(item);
+				}
+			}
+			AddList(&items);
+
+			// TODO: Removing is super slow!
+			for (int32 index = 0; message->FindRef("remove", index, &ref)
+					== B_OK; index++) {
+				PreviewItem* item = ItemForRef(ref);
+				if (item != NULL) {
+					fPreviewItemMap.erase(item->Ref());
+					RemoveItem(item);
+					delete item;
+				}
+			}
+			SortItems(&PreviewItem::Compare);
+			break;
+		}
+		default:
+			BListView::MessageReceived(message);
+	}
+}
+
+
+void
 PreviewList::KeyDown(const char* bytes, int32 numBytes)
 {
 	if (bytes[0] == B_DELETE) {
@@ -418,8 +459,14 @@ PreviewList::KeyDown(const char* bytes, int32 numBytes)
 
 			PreviewItem* item = static_cast<PreviewItem*>(
 				ItemAt(selectedIndex));
+
+			BMessage update(kMsgRefsRemoved);
+			update.AddRef("refs", &item->Ref());
+
 			fPreviewItemMap.erase(item->Ref());
 			delete RemoveItem(selectedIndex);
+
+			Looper()->PostMessage(&update);
 		}
 	} else
 		BListView::KeyDown(bytes, numBytes);
@@ -743,6 +790,10 @@ RenameWindow::RenameWindow(BRect rect)
 
 	fView->RequestFocus();
 
+	fRefModel = new RefModel(fPreviewList);
+	if (fRefModel->InitCheck() != B_OK)
+		debugger("No model!");
+
 	RenameProcessor* processor = new RenameProcessor();
 	processor->Run();
 
@@ -756,6 +807,8 @@ RenameWindow::~RenameWindow()
 	fRenameProcessor.SendMessage(B_QUIT_REQUESTED);
 
 	saveSettings();
+
+	delete fRefModel;
 }
 
 
@@ -768,19 +821,7 @@ RenameWindow::AddRef(const entry_ref& ref)
 	}
 
 	fPreviewList->AddRef(ref);
-
-	if (fRecursiveCheckBox->Value() == B_CONTROL_ON) {
-		BEntry entry(&ref);
-		if (entry.IsDirectory()) {
-			BDirectory directory(&ref);
-			BEntry child;
-			while (directory.GetNextEntry(&child) == B_OK) {
-				entry_ref childRef;
-				if (child.GetRef(&childRef) == B_OK)
-					fPreviewList->AddRef(childRef);
-			}
-		}
-	}
+	fRefModel->AddRef(ref);
 }
 
 
@@ -813,6 +854,21 @@ RenameWindow::MessageReceived(BMessage* message)
 		case kMsgUpdatePreview:
 			_UpdatePreviewItems();
 			break;
+
+		case kMsgRecursive:
+			fRefModel->SetRecursive(
+				fRecursiveCheckBox->Value() == B_CONTROL_ON);
+			break;
+
+		case kMsgRefsRemoved:
+		{
+			entry_ref ref;
+			for (int32 index = 0; message->FindRef("refs", index, &ref) == B_OK;
+					index++) {
+				fRefModel->RemoveRef(ref);
+			}
+			break;
+		}
 
 		case kMsgProcessed:
 		{
