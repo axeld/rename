@@ -56,6 +56,8 @@ static const uint32 kMsgProcessed = 'prcd';
 static const uint32 kMsgRemoveUnchanged = 'rmUn';
 static const uint32 kMsgRefsRemoved = 'rfrm';
 static const uint32 kMsgRecursive = 'recu';
+static const uint32 kMsgFilterChanged = 'fich';
+static const uint32 kMsgResetRemoved = 'rsrm';
 
 
 static rgb_color kGroupColor[] = {
@@ -75,6 +77,19 @@ enum Error {
 	INVALID_NAME,
 	DUPLICATE,
 	EXISTS
+};
+
+
+class TextFilter : public RefFilter {
+public:
+								TextFilter(const char* text);
+	virtual						~TextFilter();
+
+	virtual	bool				Accept(const entry_ref& ref,
+									bool directory) const;
+
+private:
+			BString				fSearchText;
 };
 
 
@@ -167,8 +182,10 @@ private:
 			BCardView*			fCardView;
 			RenameView*			fView;
 			BButton*			fOkButton;
+			BButton*			fResetRemovedButton;
 			BButton*			fRemoveUnchangedButton;
 			BCheckBox*			fRecursiveCheckBox;
+			BTextControl*		fFilterControl;
 			PreviewList*		fPreviewList;
 			RefModel*			fRefModel;
 			BMessenger			fRenameProcessor;
@@ -330,6 +347,28 @@ handleDirectory(BEntry &entry, int32 level)
 
 RenameAction::~RenameAction()
 {
+}
+
+
+//	#pragma mark - TextFilter
+
+
+TextFilter::TextFilter(const char* text)
+	:
+	fSearchText(text)
+{
+}
+
+
+TextFilter::~TextFilter()
+{
+}
+
+
+bool
+TextFilter::Accept(const entry_ref& ref, bool directory) const
+{
+	return strcasestr(ref.name, fSearchText.String()) != NULL;
 }
 
 
@@ -734,6 +773,9 @@ RenameWindow::RenameWindow(BRect rect)
 	fOkButton = new BButton("ok", "Rename", new BMessage(kMsgRename));
 	fOkButton->SetEnabled(false);
 
+	fResetRemovedButton = new BButton("reset", "Reset removed",
+		new BMessage(kMsgResetRemoved));
+	fResetRemovedButton->SetEnabled(false);
 	fRemoveUnchangedButton = new BButton("remove", "Remove unchanged",
 		new BMessage(kMsgRemoveUnchanged));
 	fRemoveUnchangedButton->SetEnabled(false);
@@ -766,6 +808,9 @@ RenameWindow::RenameWindow(BRect rect)
 
 	fPreviewList = new PreviewList("preview");
 
+	fFilterControl = new BTextControl("Filter", NULL, NULL);
+	fFilterControl->SetModificationMessage(new BMessage(kMsgFilterChanged));
+
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 		.AddGroup(B_VERTICAL)
 			.SetInsets(B_USE_WINDOW_SPACING)
@@ -780,7 +825,18 @@ RenameWindow::RenameWindow(BRect rect)
 				B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
 			.Add(fRecursiveCheckBox)
 			.AddGlue()
+			.AddGroup(B_VERTICAL)
+				.AddGlue()
+				.AddGrid(2, 1)
+					.Add(fFilterControl->CreateLabelLayoutItem(), 0, 0)
+					.Add(fFilterControl->CreateTextViewLayoutItem(), 1, 0)
+				.End()
+				.AddGlue()
+			.End()
+			.AddGlue()
+			.Add(fResetRemovedButton)
 			.Add(fRemoveUnchangedButton)
+			.AddGlue()
 			.Add(fOkButton)
 		.End()
 		.AddGroup(B_VERTICAL)
@@ -858,6 +914,21 @@ RenameWindow::MessageReceived(BMessage* message)
 		case kMsgRecursive:
 			fRefModel->SetRecursive(
 				fRecursiveCheckBox->Value() == B_CONTROL_ON);
+			break;
+
+		case kMsgFilterChanged:
+		{
+			const char* text = fFilterControl->Text();
+			if (text[0] != '\0') {
+				fRefModel->SetFilter(new TextFilter(text));
+			} else {
+				fRefModel->SetFilter(NULL);
+			}
+			break;
+		}
+
+		case kMsgResetRemoved:
+			fRefModel->ResetRemoved();
 			break;
 
 		case kMsgRefsRemoved:
