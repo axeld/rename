@@ -17,17 +17,6 @@
 #define RECURSIVE_CHANGED	0x04
 
 
-//	#pragma mark - RefFilter
-
-
-RefFilter::~RefFilter()
-{
-}
-
-
-//	#pragma mark - RefModel
-
-
 RefModel::RefModel(const BMessenger& target)
 	:
 	fTarget(target),

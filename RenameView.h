@@ -1,3 +1,6 @@
+/*
+ * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ */
 #ifndef RENAME_VIEW_H
 #define RENAME_VIEW_H
 

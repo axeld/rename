@@ -80,17 +80,9 @@ enum Error {
 };
 
 
-class TextFilter : public RefFilter {
-public:
-								TextFilter(const char* text);
-	virtual						~TextFilter();
-
-	virtual	bool				Accept(const entry_ref& ref,
-									bool directory) const;
-
-private:
-			BString				fSearchText;
-};
+#define FILES_AND_FOLDERS	0
+#define	FILES_ONLY			1
+#define FOLDERS_ONLY		2
 
 
 class PreviewItem : public BStringItem {
@@ -174,6 +166,7 @@ public:
 
 private:
 			void				_UpdatePreviewItems();
+			void				_UpdateFilter();
 			void				_RenameFiles();
 
 private:
@@ -186,6 +179,9 @@ private:
 			BButton*			fRemoveUnchangedButton;
 			BCheckBox*			fRecursiveCheckBox;
 			BTextControl*		fFilterControl;
+			BCheckBox*			fReverseFilterCheckBox;
+			BMenuField*			fTypeMenuField;
+			BPopUpMenu*			fTypeMenu;
 			PreviewList*		fPreviewList;
 			RefModel*			fRefModel;
 			BMessenger			fRenameProcessor;
@@ -347,28 +343,6 @@ handleDirectory(BEntry &entry, int32 level)
 
 RenameAction::~RenameAction()
 {
-}
-
-
-//	#pragma mark - TextFilter
-
-
-TextFilter::TextFilter(const char* text)
-	:
-	fSearchText(text)
-{
-}
-
-
-TextFilter::~TextFilter()
-{
-}
-
-
-bool
-TextFilter::Accept(const entry_ref& ref, bool directory) const
-{
-	return strcasestr(ref.name, fSearchText.String()) != NULL;
 }
 
 
@@ -808,15 +782,36 @@ RenameWindow::RenameWindow(BRect rect)
 
 	fPreviewList = new PreviewList("preview");
 
+	// Filter options
+
 	fFilterControl = new BTextControl("Filter", NULL, NULL);
 	fFilterControl->SetModificationMessage(new BMessage(kMsgFilterChanged));
+
+	fReverseFilterCheckBox = new BCheckBox("reverse",
+		"Remove matching", new BMessage(kMsgFilterChanged));
+
+	fTypeMenu = new BPopUpMenu("Types");
+
+	message = new BMessage(kMsgFilterChanged);
+	item = new BMenuItem("Files & folders", message);
+	item->SetMarked(true);
+	fTypeMenu->AddItem(item);
+
+	message = new BMessage(kMsgFilterChanged);
+	item = new BMenuItem("Files only", message);
+	fTypeMenu->AddItem(item);
+
+	message = new BMessage(kMsgFilterChanged);
+	item = new BMenuItem("Folders only", message);
+	fTypeMenu->AddItem(item);
+
+	fTypeMenuField = new BMenuField("type", "", fTypeMenu);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 		.AddGroup(B_VERTICAL)
 			.SetInsets(B_USE_WINDOW_SPACING)
 			.AddGrid(0.f)
-				.Add(fActionMenuField->CreateLabelLayoutItem(), 0, 0)
-				.Add(fActionMenuField->CreateMenuBarLayoutItem(), 1, 0)
+				.AddMenuField(fActionMenuField, 0, 0)
 			.End()
 			.Add(fCardView)
 		.End()
@@ -827,12 +822,14 @@ RenameWindow::RenameWindow(BRect rect)
 			.AddGlue()
 			.AddGroup(B_VERTICAL)
 				.AddGlue()
-				.AddGrid(2, 1)
-					.Add(fFilterControl->CreateLabelLayoutItem(), 0, 0)
-					.Add(fFilterControl->CreateTextViewLayoutItem(), 1, 0)
+				.AddGrid(5, 1)
+					.AddMenuField(fTypeMenuField, 0, 0)
+					.AddGlue(2, 0)
+					.AddTextControl(fFilterControl, 3, 0)
 				.End()
 				.AddGlue()
 			.End()
+			.Add(fReverseFilterCheckBox)
 			.AddGlue()
 			.Add(fResetRemovedButton)
 			.Add(fRemoveUnchangedButton)
@@ -917,15 +914,8 @@ RenameWindow::MessageReceived(BMessage* message)
 			break;
 
 		case kMsgFilterChanged:
-		{
-			const char* text = fFilterControl->Text();
-			if (text[0] != '\0') {
-				fRefModel->SetFilter(new TextFilter(text));
-			} else {
-				fRefModel->SetFilter(NULL);
-			}
+			_UpdateFilter();
 			break;
-		}
 
 		case kMsgResetRemoved:
 			fRefModel->ResetRemoved();
@@ -938,6 +928,7 @@ RenameWindow::MessageReceived(BMessage* message)
 					index++) {
 				fRefModel->RemoveRef(ref);
 			}
+			fResetRemovedButton->SetEnabled(true);
 			break;
 		}
 
@@ -1053,6 +1044,38 @@ RenameWindow::_UpdatePreviewItems()
 		fRemoveUnchangedButton->SetEnabled(true);
 
 	delete action;
+}
+
+
+void
+RenameWindow::_UpdateFilter()
+{
+	RefFilter* textFilter = NULL;
+	const char* text = fFilterControl->Text();
+	if (text[0] != '\0') {
+		textFilter = new TextFilter(text);
+
+		if (fReverseFilterCheckBox->Value() == B_CONTROL_ON)
+			textFilter = new ReverseFilter(textFilter);
+	}
+
+	RefFilter* typeFilter = NULL;
+	int32 type = fTypeMenu->FindMarkedIndex();
+	if (type == FILES_ONLY)
+		typeFilter = new FilesOnlyFilter();
+	else if (type == FOLDERS_ONLY)
+		typeFilter = new FoldersOnlyFilter();
+
+	AndFilter* filter = new AndFilter();
+	filter->AddFilter(typeFilter);
+	filter->AddFilter(textFilter);
+
+	if (filter->IsEmpty()) {
+		delete filter;
+		filter = NULL;
+	}
+
+	fRefModel->SetFilter(filter);
 }
 
 

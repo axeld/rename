@@ -1,6 +1,11 @@
+/*
+ * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ */
 #ifndef REF_MODEL_H
 #define REF_MODEL_H
 
+
+#include "RefFilter.h"
 
 #include <Entry.h>
 #include <Locker.h>
@@ -11,15 +16,6 @@
 
 
 static const uint32 kMsgUpdateRefs = 'upRf';
-
-
-class RefFilter {
-public:
-	virtual						~RefFilter();
-
-	virtual	bool				Accept(const entry_ref& ref,
-									bool directory) const = 0;
-};
 
 
 typedef std::set<entry_ref> EntrySet;
