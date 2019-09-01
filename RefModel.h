@@ -30,6 +30,8 @@ public:
 
 			void				AddRef(const entry_ref& ref);
 			void				RemoveRef(const entry_ref& ref);
+			void				UpdateRef(const entry_ref& from,
+									const entry_ref& to);
 
 			bool				IsRecursive() const
 									{ return fRecursive; }

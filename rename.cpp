@@ -1113,6 +1113,7 @@ RenameWindow::_RenameFiles()
 			fprintf(stderr, "Renaming failed: %s\n", strerror(status));
 		}
 
+		fRefModel->UpdateRef(originalRef, item->Ref());
 		fPreviewList->UpdateRef(originalRef, item);
 	}
 

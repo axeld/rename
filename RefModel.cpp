@@ -16,6 +16,7 @@
 #define FILTER_CHANGED		0x02
 #define RECURSIVE_CHANGED	0x04
 #define REMOVED_CLEARED 	0x08
+#define REFS_UPDATED		0x10
 
 
 RefModel::RefModel(const BMessenger& target)
@@ -66,7 +67,7 @@ RefModel::AddRef(const entry_ref& ref)
 	BAutolock pendingLocker(fPendingLock);
 	fPending.insert(ref);
 
-	release_sem(fChangeSem);
+	release_sem_etc(fChangeSem, 1, B_DO_NOT_RESCHEDULE);
 }
 
 
@@ -77,7 +78,25 @@ RefModel::RemoveRef(const entry_ref& ref)
 	fRemoved.insert(ref);
 
 	atomic_or(&fChanges, REMOVED_CHANGED);
-	release_sem(fChangeSem);
+	release_sem_etc(fChangeSem, 1, B_DO_NOT_RESCHEDULE);
+}
+
+
+void
+RefModel::UpdateRef(const entry_ref& from, const entry_ref& to)
+{
+	BAutolock locker(fAddedLock);
+
+	if (fAdded.erase(from)) {
+		fAdded.insert(to);
+
+		BAutolock pendingLocker(fPendingLock);
+		fPending.insert(to);
+	} else {
+		atomic_or(&fChanges, REFS_UPDATED);
+	}
+
+	release_sem_etc(fChangeSem, 1, B_DO_NOT_RESCHEDULE);
 }
 
 
@@ -133,22 +152,18 @@ RefModel::_Work(void* _self)
 status_t
 RefModel::_Work()
 {
-	puts("Worker running...");
 	while (true) {
 		int32 count;
 		status_t status = get_sem_count(fChangeSem, &count);
-		if (status < B_OK) {
-			puts("gone 1");
+		if (status < B_OK)
 			return status;
-		}
+
 		if (count < 1)
 			count = 1;
 
 		status = acquire_sem_etc(fChangeSem, count, 0, 0);
-		if (status < B_OK) {
-			printf("gone 2: %s\n", strerror(status));
+		if (status < B_OK)
 			return status;
-		}
 
 		// Determine changes and configuration
 		int32 changes = atomic_and(&fChanges, 0);
