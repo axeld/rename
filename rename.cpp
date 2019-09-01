@@ -919,6 +919,7 @@ RenameWindow::MessageReceived(BMessage* message)
 
 		case kMsgResetRemoved:
 			fRefModel->ResetRemoved();
+			fResetRemovedButton->SetEnabled(false);
 			break;
 
 		case kMsgRefsRemoved:

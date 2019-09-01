@@ -15,6 +15,7 @@
 #define REMOVED_CHANGED 	0x01
 #define FILTER_CHANGED		0x02
 #define RECURSIVE_CHANGED	0x04
+#define REMOVED_CLEARED 	0x08
 
 
 RefModel::RefModel(const BMessenger& target)
@@ -116,7 +117,7 @@ RefModel::ResetRemoved()
 	BAutolock locker(fRemovedLock);
 	fRemoved.clear();
 
-	atomic_or(&fChanges, REMOVED_CHANGED);
+	atomic_or(&fChanges, REMOVED_CLEARED);
 	release_sem(fChangeSem);
 }
 
@@ -169,7 +170,6 @@ RefModel::_Work()
 			delete fOldFilter;
 			fOldFilter = NULL;
 		}
-printf("GO %" B_PRIx32 "\n", changes);
 
 		// Rebuild transformed, if needed
 		if ((changes & RECURSIVE_CHANGED) != 0) {
@@ -185,7 +185,8 @@ printf("GO %" B_PRIx32 "\n", changes);
 		BMessage update(kMsgUpdateRefs);
 
 		// Rebuild filter, if needed
-		if ((changes & FILTER_CHANGED) != 0) {
+		if ((changes & (FILTER_CHANGED | REMOVED_CHANGED
+				| REMOVED_CLEARED)) != 0) {
 			_Transform(update, pending, recursive, NULL, false);
 			_Filter(update, fTransformedDirs, filter, true);
 			_Filter(update, fTransformedFiles, filter, false);
