@@ -82,25 +82,24 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 {
 	BString stringBuffer;
 	if (!fValidPattern)
-		return stringBuffer;
+		return string;
 
 	regmatch_t groups[MAX_GROUPS];
 	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
-		return stringBuffer;
+		return string;
 
 	stringBuffer = fReplace;
+
 	if (groups[1].rm_so == -1) {
 		// There is just a single group -- just replace the match
 		stringBuffer.Prepend(string, groups[0].rm_so);
-		stringBuffer.Append(string + groups[0].rm_eo);
-		return stringBuffer;
 	}
 
 	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
 	char* target = buffer;
 
 	for (; target[0] != '\0'; target++) {
-		if (target[0] == '\\' && target[1] > '0' && target[1] <= '9') {
+		if (target[0] == '\\' && target[1] >= '0' && target[1] <= '9') {
 			// References a group
 			int32 groupIndex = target[1] - '0';
 			int startOffset = groups[groupIndex].rm_so;
@@ -122,6 +121,13 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 	}
 
 	stringBuffer.UnlockBuffer();
+
+	if (groups[1].rm_so == -1) {
+		groupList.AddItem(new Group(0, groups[0].rm_so,
+			stringBuffer.Length()));
+		stringBuffer.Append(string + groups[0].rm_eo);
+	}
+
 	return stringBuffer;
 }
 
