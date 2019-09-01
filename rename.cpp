@@ -179,6 +179,7 @@ private:
 			BButton*			fRemoveUnchangedButton;
 			BCheckBox*			fRecursiveCheckBox;
 			BTextControl*		fFilterControl;
+			BCheckBox*			fRegExpFilterCheckBox;
 			BCheckBox*			fReverseFilterCheckBox;
 			BMenuField*			fTypeMenuField;
 			BPopUpMenu*			fTypeMenu;
@@ -787,6 +788,8 @@ RenameWindow::RenameWindow(BRect rect)
 	fFilterControl = new BTextControl("Filter", NULL, NULL);
 	fFilterControl->SetModificationMessage(new BMessage(kMsgFilterChanged));
 
+	fRegExpFilterCheckBox = new BCheckBox("regexp",
+		"Regular expression", new BMessage(kMsgFilterChanged));
 	fReverseFilterCheckBox = new BCheckBox("reverse",
 		"Remove matching", new BMessage(kMsgFilterChanged));
 
@@ -829,6 +832,7 @@ RenameWindow::RenameWindow(BRect rect)
 				.End()
 				.AddGlue()
 			.End()
+			.Add(fRegExpFilterCheckBox)
 			.Add(fReverseFilterCheckBox)
 			.AddGlue()
 			.Add(fResetRemovedButton)
@@ -1054,7 +1058,10 @@ RenameWindow::_UpdateFilter()
 	RefFilter* textFilter = NULL;
 	const char* text = fFilterControl->Text();
 	if (text[0] != '\0') {
-		textFilter = new TextFilter(text);
+		if (fRegExpFilterCheckBox->Value() == B_CONTROL_ON)
+			textFilter = new RegularExpressionFilter(text);
+		else
+			textFilter = new TextFilter(text);
 
 		if (fReverseFilterCheckBox->Value() == B_CONTROL_ON)
 			textFilter = new ReverseFilter(textFilter);

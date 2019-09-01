@@ -9,6 +9,8 @@
 #include <ObjectList.h>
 #include <String.h>
 
+#include <regex.h>
+
 
 class RefFilter {
 public:
@@ -49,6 +51,20 @@ public:
 
 private:
 			BString				fSearchText;
+};
+
+
+class RegularExpressionFilter : public RefFilter {
+public:
+								RegularExpressionFilter(const char* pattern);
+	virtual						~RegularExpressionFilter();
+
+	virtual	bool				Accept(const entry_ref& ref,
+									bool directory) const;
+
+private:
+			regex_t				fCompiledPattern;
+			bool				fValidPattern;
 };
 
 

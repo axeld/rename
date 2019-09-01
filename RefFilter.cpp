@@ -87,6 +87,35 @@ TextFilter::Accept(const entry_ref& ref, bool directory) const
 }
 
 
+//	#pragma mark - RegularExpressionFilter
+
+
+RegularExpressionFilter::RegularExpressionFilter(const char* pattern)
+	:
+	fValidPattern(false)
+{
+	if (regcomp(&fCompiledPattern, pattern, REG_EXTENDED) == 0)
+		fValidPattern = true;
+}
+
+
+RegularExpressionFilter::~RegularExpressionFilter()
+{
+	if (fValidPattern)
+		regfree(&fCompiledPattern);
+}
+
+
+bool
+RegularExpressionFilter::Accept(const entry_ref& ref, bool directory) const
+{
+	if (!fValidPattern)
+		return true;
+
+	return regexec(&fCompiledPattern, ref.name, 0, NULL, 0) == 0;
+}
+
+
 //	#pragma mark - ReverseFilter
 
 
