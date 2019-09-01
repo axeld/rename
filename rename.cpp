@@ -460,6 +460,8 @@ PreviewList::MessageReceived(BMessage* message)
 				}
 			}
 			SortItems(&PreviewItem::Compare);
+			if (!items.IsEmpty())
+				Looper()->PostMessage(kMsgUpdatePreview);
 			break;
 		}
 		default:
