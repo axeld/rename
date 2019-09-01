@@ -399,14 +399,21 @@ PreviewList::ItemForRef(const entry_ref& ref)
 void
 PreviewList::RemoveUnchanged()
 {
+	BMessage update(kMsgRefsRemoved);
+
 	for (int32 index = 0; index < CountItems(); index++) {
 		PreviewItem* item = static_cast<PreviewItem*>(ItemAt(index));
 		if (!item->HasTarget()) {
+			update.AddRef("refs", &item->Ref());
+
 			fPreviewItemMap.erase(item->Ref());
 			delete RemoveItem(index);
 			index--;
 		}
 	}
+
+	if (!update.IsEmpty())
+		Looper()->PostMessage(&update);
 }
 
 
