@@ -187,7 +187,7 @@ RefModel::_Work()
 		}
 
 		// Rebuild transformed, if needed
-		if ((changes & RECURSIVE_CHANGED) != 0) {
+		if ((changes & (RECURSIVE_CHANGED | REFS_UPDATED)) != 0) {
 			fTransformedDirs.clear();
 			fTransformedFiles.clear();
 
