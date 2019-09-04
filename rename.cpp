@@ -100,6 +100,9 @@ public:
 			void				SetTarget(const BString& target);
 			bool				HasTarget() const
 									{ return !fTarget.IsEmpty(); }
+			void				UpdateProcessed(int32 from, int32 to,
+									const BString& replace);
+
 			bool				IsValid() const
 									{ return fError == NO_ERROR; }
 			::Error				Error() const
@@ -164,6 +167,7 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 
 private:
+			void				_HandleProcessed(BMessage* message);
 			void				_UpdatePreviewItems();
 			void				_UpdateFilter();
 			void				_RenameFiles();
@@ -195,8 +199,9 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 
 private:
-			bool				_ProcessRef(const entry_ref& ref,
-									BString& target);
+			void				_ProcessRef(BMessage& update,
+									const entry_ref& ref,
+									const BString& target);
 			bool				_CheckRef(const entry_ref& ref,
 									const BString& target);
 			BString				_ReadAttribute(const entry_ref& ref,
@@ -512,6 +517,30 @@ void
 PreviewItem::SetTarget(const BString& target)
 {
 	fTarget = target;
+}
+
+
+void
+PreviewItem::UpdateProcessed(int32 from, int32 to, const BString& replace)
+{
+	// Update text
+	fTarget.Remove(from, to - from);
+	fTarget.Insert(replace, from);
+
+	// Update groups
+	int32 diff = replace.Length() - to + from;
+
+	for (int32 index = 0; index < fRenameGroups.CountItems(); index++) {
+		Group& group = *fRenameGroups.ItemAt(index);
+
+		if (group.start == from)
+			group.end = from + replace.Length();
+		else if (group.end > to)
+			group.end += diff;
+
+		if (group.start > from)
+			group.start += diff;
+	}
 }
 
 
@@ -963,46 +992,7 @@ RenameWindow::MessageReceived(BMessage* message)
 
 		case kMsgProcessed:
 		{
-			int32 processedCount = 0;
-			int32 errorCount = 0;
-			entry_ref ref;
-			for (int32 index = 0; message->FindRef("processed", index, &ref)
-					== B_OK; index++) {
-				BString target;
-				if (message->FindString("target", index, &target) != B_OK)
-					continue;
-
-				PreviewItem* item = fPreviewList->ItemForRef(ref);
-				if (item != NULL) {
-					item->SetTarget(target);
-					processedCount++;
-				}
-			}
-
-			for (int32 index = 0; message->FindRef("refs", index, &ref)
-					== B_OK; index++) {
-				PreviewItem* item = fPreviewList->ItemForRef(ref);
-				if (item != NULL) {
-					item->SetError(EXISTS);
-					errorCount++;
-				}
-			}
-			if (errorCount != 0 || processedCount != 0)
-				fPreviewList->Invalidate();
-			if (errorCount == 0)
-				fOkButton->SetEnabled(true);
-
-			// Check if there are any unchanged entries
-			bool unchanged = false;
-			for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
-				PreviewItem* item = static_cast<PreviewItem*>(
-					fPreviewList->ItemAt(index));
-				if (!item->HasTarget()) {
-					unchanged = true;
-					break;
-				}
-			}
-			fRemoveUnchangedButton->SetEnabled(unchanged);
+			_HandleProcessed(message);
 			break;
 		}
 
@@ -1022,6 +1012,56 @@ RenameWindow::MessageReceived(BMessage* message)
 			_UpdatePreviewItems();
 			break;
 	}
+}
+
+
+void
+RenameWindow::_HandleProcessed(BMessage* message)
+{
+	int32 processedCount = 0;
+	int32 errorCount = 0;
+	entry_ref ref;
+	for (int32 index = 0; message->FindRef("ref", index, &ref)
+			== B_OK; index++) {
+		BString replace;
+		int32 from;
+		int32 to;
+		if (message->FindString("replace", index, &replace) != B_OK
+			|| message->FindInt32("from", index, &from) != B_OK
+			|| message->FindInt32("to", index, &to) != B_OK)
+			continue;
+
+		PreviewItem* item = fPreviewList->ItemForRef(ref);
+		if (item != NULL) {
+			item->UpdateProcessed(from, to, replace);
+			processedCount++;
+		}
+	}
+
+	for (int32 index = 0; message->FindRef("exists", index, &ref)
+			== B_OK; index++) {
+		PreviewItem* item = fPreviewList->ItemForRef(ref);
+		if (item != NULL) {
+			item->SetError(EXISTS);
+			errorCount++;
+		}
+	}
+	if (errorCount != 0 || processedCount != 0)
+		fPreviewList->Invalidate();
+	if (errorCount == 0)
+		fOkButton->SetEnabled(true);
+
+	// Check if there are any unchanged entries
+	bool unchanged = false;
+	for (int32 index = 0; index < fPreviewList->CountItems(); index++) {
+		PreviewItem* item = static_cast<PreviewItem*>(
+			fPreviewList->ItemAt(index));
+		if (!item->HasTarget()) {
+			unchanged = true;
+			break;
+		}
+	}
+	fRemoveUnchangedButton->SetEnabled(unchanged);
 }
 
 
@@ -1162,12 +1202,9 @@ RenameProcessor::MessageReceived(BMessage* message)
 					index++) {
 				BString target;
 				if (message->FindString("target", index, &target) == B_OK) {
-					if (_ProcessRef(ref, target)) {
-						reply.AddRef("processed", &ref);
-						reply.AddString("target", target);
-					}
+					_ProcessRef(reply, ref, target);
 					if (!_CheckRef(ref, target))
-						reply.AddRef("refs", &ref);
+						reply.AddRef("exists", &ref);
 				}
 			}
 
@@ -1183,13 +1220,13 @@ RenameProcessor::MessageReceived(BMessage* message)
 
 
 //!	Evaluate expressions in the target name.
-bool
-RenameProcessor::_ProcessRef(const entry_ref& ref, BString& target)
+void
+RenameProcessor::_ProcessRef(BMessage& update, const entry_ref& ref,
+	const BString& target)
 {
-	BString name = target;
-	int length = name.Length();
-	char* buffer = name.LockBuffer(B_FILE_NAME_LENGTH);
-	bool changed = false;
+	int length = target.Length();
+	const char* buffer = target.String();
+	int diff = 0;
 
 	for (int index = 0; index < length - 3; index++) {
 		if (buffer[index] == '$') {
@@ -1202,6 +1239,7 @@ RenameProcessor::_ProcessRef(const entry_ref& ref, BString& target)
 			}
 
 			BString result;
+			bool changed = false;
 
 			if (expressionLength > 0 && open == '(') {
 				// bash script
@@ -1215,20 +1253,16 @@ RenameProcessor::_ProcessRef(const entry_ref& ref, BString& target)
 			}
 
 			if (changed) {
-				name.Remove(index, expressionLength + 3);
-				name.Insert(result, index);
-				index += result.Length();
-				length = name.Length();
+				update.AddRef("ref", &ref);
+				update.AddInt32("from", index + diff);
+				update.AddInt32("to", index + expressionLength + 3 + diff);
+				update.AddString("replace", result);
+
+				diff += result.Length() - expressionLength - 3;
+				index += expressionLength + 2;
 			}
 		}
 	}
-
-	name.UnlockBuffer();
-
-	if (changed)
-		target = name;
-
-	return changed;
 }
 
 
