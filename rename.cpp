@@ -94,12 +94,11 @@ public:
 
 			const entry_ref&	Ref() const
 									{ return fRef; }
-			const entry_ref&	TargetRef() const
-									{ return fTargetRef; }
-			void				SetTargetRef(const entry_ref& target);
+			const BString&		Target() const
+									{ return fTarget; }
+			void				SetTarget(const BString& target);
 			bool				HasTarget() const
-									{ return fTargetRef.name != NULL
-										&& fTargetRef.name[0] != '\0'; }
+									{ return !fTarget.IsEmpty(); }
 			bool				IsValid() const
 									{ return fError == NO_ERROR; }
 			::Error				Error() const
@@ -124,14 +123,13 @@ private:
 
 private:
 			entry_ref			fRef;
-			entry_ref			fTargetRef;
+			BString				fTarget;
 			BObjectList<Group>	fGroups;
 			BObjectList<Group>	fRenameGroups;
 			::Error				fError;
 };
 
 typedef std::map<entry_ref, PreviewItem*> PreviewItemMap;
-typedef std::map<BString, PreviewItem*> NameMap;
 
 
 class PreviewList : public BListView {
@@ -197,9 +195,9 @@ public:
 
 private:
 			bool				_ProcessRef(const entry_ref& ref,
-									entry_ref& targetRef);
+									BString& target);
 			bool				_CheckRef(const entry_ref& ref,
-									const entry_ref& targetRef);
+									const BString& target);
 			BString				_ReadAttribute(const entry_ref& ref,
 									const char* name);
 			int					_Extract(const char* buffer, int length,
@@ -506,15 +504,13 @@ PreviewItem::PreviewItem(const entry_ref& ref)
 	fGroups(10, true),
 	fError(NO_ERROR)
 {
-	fTargetRef.device = fRef.device;
-	fTargetRef.directory = fRef.directory;
 }
 
 
 void
-PreviewItem::SetTargetRef(const entry_ref& target)
+PreviewItem::SetTarget(const BString& target)
 {
-	fTargetRef = target;
+	fTarget = target;
 }
 
 
@@ -529,11 +525,11 @@ PreviewItem::SetRenameAction(const RenameAction& action)
 
 	BString newName = action.Rename(fRenameGroups, fRef.name);
 	if (newName != fRef.name)
-		fTargetRef.set_name(newName.String());
+		fTarget = newName;
 	else
-		fTargetRef.set_name(NULL);
+		fTarget = "";
 
-	if (HasTarget() && !_IsValidName(fTargetRef.name))
+	if (HasTarget() && !_IsValidName(fTarget))
 		fError = INVALID_NAME;
 }
 
@@ -549,12 +545,12 @@ PreviewItem::Rename()
 	if (status != B_OK)
 		return status;
 
-	status = entry.Rename(fTargetRef.name);
+	status = entry.Rename(fTarget.String());
 	if (status != B_OK)
 		return status;
 
-	fRef.set_name(fTargetRef.name);
-	fTargetRef.set_name(NULL);
+	fRef.set_name(fTarget.String());
+	fTarget = "";
 
 	return B_OK;
 }
@@ -626,9 +622,9 @@ PreviewItem::DrawItem(BView* owner, BRect frame, bool complete)
 
 	if (fRenameGroups.IsEmpty()) {
 		owner->MovePenTo(x + width, frame.top + BaselineOffset());
-		owner->DrawString(fTargetRef.name);
+		owner->DrawString(fTarget);
 	} else {
-		_DrawGroupedText(owner, frame, x + width, fTargetRef.name,
+		_DrawGroupedText(owner, frame, x + width, fTarget.String(),
 			fRenameGroups, 0);
 	}
 
@@ -710,6 +706,7 @@ PreviewItem::_DrawGroupedText(BView* owner, BRect frame, float x,
 			x + endOffset);
 	}
 
+	// TODO: Draw parts with the correct low color
 	owner->MovePenTo(x, frame.top + BaselineOffset());
 	owner->DrawString(text.String());
 }
@@ -953,13 +950,13 @@ RenameWindow::MessageReceived(BMessage* message)
 			entry_ref ref;
 			for (int32 index = 0; message->FindRef("processed", index, &ref)
 					== B_OK; index++) {
-				entry_ref target;
-				if (message->FindRef("target", index, &target) != B_OK)
+				BString target;
+				if (message->FindString("target", index, &target) != B_OK)
 					continue;
 
 				PreviewItem* item = fPreviewList->ItemForRef(ref);
 				if (item != NULL) {
-					item->SetTargetRef(target);
+					item->SetTarget(target);
 					processedCount++;
 				}
 			}
@@ -1018,7 +1015,7 @@ RenameWindow::_UpdatePreviewItems()
 	BMessage check(kMsgProcessAndCheckRename);
 	int errorCount = 0;
 	int validCount = 0;
-	NameMap map;
+	PreviewItemMap map;
 	for (int32 i = 0; i < fPreviewList->CountItems(); i++) {
 		PreviewItem* item = static_cast<PreviewItem*>(
 			fPreviewList->ItemAt(i));
@@ -1026,14 +1023,15 @@ RenameWindow::_UpdatePreviewItems()
 
 		if (item->IsValid()) {
 			if (item->HasTarget()) {
-				BString name = item->TargetRef().name;
-				NameMap::iterator found = map.find(name);
+				entry_ref targetRef = item->Ref();
+				targetRef.set_name(item->Target());
+				PreviewItemMap::iterator found = map.find(targetRef);
 				if (found != map.end()) {
 					found->second->SetError(DUPLICATE);
 					item->SetError(DUPLICATE);
 					errorCount++;
 				} else {
-					map.insert(std::make_pair(name, item));
+					map.insert(std::make_pair(targetRef, item));
 					validCount++;
 				}
 			}
@@ -1043,7 +1041,7 @@ RenameWindow::_UpdatePreviewItems()
 
 		if (errorCount == 0 && item->HasTarget()) {
 			check.AddRef("source", &item->Ref());
-			check.AddRef("target", &item->TargetRef());
+			check.AddString("target", item->Target());
 		}
 	}
 
@@ -1144,13 +1142,13 @@ RenameProcessor::MessageReceived(BMessage* message)
 			int32 index;
 			for (index = 0; message->FindRef("source", index, &ref) == B_OK;
 					index++) {
-				entry_ref targetRef;
-				if (message->FindRef("target", index, &targetRef) == B_OK) {
-					if (_ProcessRef(ref, targetRef)) {
+				BString target;
+				if (message->FindString("target", index, &target) == B_OK) {
+					if (_ProcessRef(ref, target)) {
 						reply.AddRef("processed", &ref);
-						reply.AddRef("target", &targetRef);
+						reply.AddString("target", target);
 					}
-					if (!_CheckRef(ref, targetRef))
+					if (!_CheckRef(ref, target))
 						reply.AddRef("refs", &ref);
 				}
 			}
@@ -1166,10 +1164,11 @@ RenameProcessor::MessageReceived(BMessage* message)
 }
 
 
+//!	Evaluate expressions in the target name.
 bool
-RenameProcessor::_ProcessRef(const entry_ref& ref, entry_ref& targetRef)
+RenameProcessor::_ProcessRef(const entry_ref& ref, BString& target)
 {
-	BString name(targetRef.name);
+	BString name = target;
 	int length = name.Length();
 	char* buffer = name.LockBuffer(B_FILE_NAME_LENGTH);
 	bool changed = false;
@@ -1209,15 +1208,17 @@ RenameProcessor::_ProcessRef(const entry_ref& ref, entry_ref& targetRef)
 	name.UnlockBuffer();
 
 	if (changed)
-		targetRef.set_name(name.String());
+		target = name;
 
 	return changed;
 }
 
 
 bool
-RenameProcessor::_CheckRef(const entry_ref& ref, const entry_ref& targetRef)
+RenameProcessor::_CheckRef(const entry_ref& ref, const BString& target)
 {
+	entry_ref targetRef = ref;
+	targetRef.set_name(target.String());
 	BEntry entry(&targetRef);
 	return !entry.Exists();
 }
