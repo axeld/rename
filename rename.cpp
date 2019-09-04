@@ -17,6 +17,7 @@
 #include <CardView.h>
 #include <CheckBox.h>
 #include <ControlLook.h>
+#include <Directory.h>
 #include <LayoutBuilder.h>
 #include <ListView.h>
 #include <ObjectList.h>
@@ -545,11 +546,26 @@ PreviewItem::Rename()
 	if (status != B_OK)
 		return status;
 
+	// Make sure all sub directories exist
+	int32 index = fTarget.FindLast('/');
+	if (index >= 0) {
+		BPath path;
+		status = path.SetTo(&fRef);
+		if (status == B_OK)
+			status = path.GetParent(&path);
+		if (status == B_OK)
+			status = path.Append(BString().SetTo(fTarget, index));
+		if (status == B_OK)
+			status = create_directory(path.Path(), 0755);
+		if (status != B_OK)
+			return status;
+	}
+
 	status = entry.Rename(fTarget.String());
 	if (status != B_OK)
 		return status;
 
-	fRef.set_name(fTarget.String());
+	entry.GetRef(&fRef);
 	fTarget = "";
 
 	return B_OK;
@@ -724,7 +740,9 @@ PreviewItem::_DrawGroup(BView* owner, uint32 groupIndex, BRect frame,
 bool
 PreviewItem::_IsValidName(const char* name) const
 {
-	return strchr(name, '/') == NULL;
+	// TODO: move could be optional
+//	return strchr(name, '/') == NULL;
+	return true;
 }
 
 
@@ -1218,7 +1236,17 @@ bool
 RenameProcessor::_CheckRef(const entry_ref& ref, const BString& target)
 {
 	entry_ref targetRef = ref;
-	targetRef.set_name(target.String());
+	int32 index = target.FindFirst('/');
+	if (index >= 0) {
+		BPath path(&ref);
+		if (path.InitCheck() != B_OK
+			|| path.GetParent(&path) != B_OK
+			|| path.Append(target) != B_OK
+			|| get_ref_for_path(path.Path(), &targetRef) != B_OK)
+			return true;
+	} else
+		targetRef.set_name(target.String());
+
 	BEntry entry(&targetRef);
 	return !entry.Exists();
 }

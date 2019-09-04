@@ -95,7 +95,7 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 		stringBuffer.Prepend(string, groups[0].rm_so);
 	}
 
-	char* buffer = stringBuffer.LockBuffer(B_FILE_NAME_LENGTH);
+	char* buffer = stringBuffer.LockBuffer(B_PATH_NAME_LENGTH);
 	char* target = buffer;
 
 	for (; target[0] != '\0'; target++) {
