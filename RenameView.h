@@ -17,7 +17,7 @@ public:
 	virtual						~RenameView();
 
 	virtual	RenameAction*		Action() const = 0;
-	virtual void				RequestFocus() const = 0;
+	virtual void				RequestFocus() const;
 };
 
 

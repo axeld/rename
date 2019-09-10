@@ -145,12 +145,16 @@ RegularExpressionView::RegularExpressionView()
 	fRenameControl = new BTextControl("Replace with", NULL, NULL);
 	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
 
-	BLayoutBuilder::Grid<>(this, 0.f)
+	BLayoutBuilder::Group<>(this, B_VERTICAL)
 		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
-		.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
-		.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
-		.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
-		.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1);
+		.AddGrid(0.f)
+			.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
+			.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
+			.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
+			.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1)
+		.End()
+		.AddGlue();
+
 }
 
 

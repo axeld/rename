@@ -6,6 +6,7 @@
 
 #include "rename.h"
 
+#include "CaseRenameAction.h"
 #include "RefModel.h"
 #include "RegularExpressionRenameAction.h"
 #include "WindowsRenameAction.h"
@@ -790,6 +791,12 @@ RenameView::~RenameView()
 }
 
 
+void
+RenameView::RequestFocus() const
+{
+}
+
+
 //	#pragma mark - RenameWindow
 
 
@@ -813,18 +820,19 @@ RenameWindow::RenameWindow(BRect rect)
 
 	RenameView* regularExpressionView = fView = new RegularExpressionView();
 	RenameView* windowsRenameView = new WindowsRenameView();
+	RenameView* caseRenameView = new CaseRenameView();
 
 	fActionMenu = new BPopUpMenu("Actions");
 
-	BMessage* message = new BMessage(kMsgSetAction);
-	message->AddInt32("index", 0);
-	BMenuItem* item = new BMenuItem("Regular expression", message);
+	BMenuItem* item = new BMenuItem("Regular expression",
+		new BMessage(kMsgSetAction));
 	item->SetMarked(true);
 	fActionMenu->AddItem(item);
 
-	message = new BMessage(kMsgSetAction);
-	message->AddInt32("index", 1);
-	item = new BMenuItem("Windows compliant", message);
+	item = new BMenuItem("Windows compliant", new BMessage(kMsgSetAction));
+	fActionMenu->AddItem(item);
+
+	item = new BMenuItem("Change case", new BMessage(kMsgSetAction));
 	fActionMenu->AddItem(item);
 
 	fActionMenuField = new BMenuField("action", "Rename method", fActionMenu);
@@ -832,6 +840,7 @@ RenameWindow::RenameWindow(BRect rect)
 	fCardView = new BCardView("action");
 	fCardView->AddChild(regularExpressionView);
 	fCardView->AddChild(windowsRenameView);
+	fCardView->AddChild(caseRenameView);
 	fCardView->CardLayout()->SetVisibleItem(0L);
 
 	fPreviewList = new PreviewList("preview");
@@ -848,23 +857,20 @@ RenameWindow::RenameWindow(BRect rect)
 
 	fTypeMenu = new BPopUpMenu("Types");
 
-	message = new BMessage(kMsgFilterChanged);
-	item = new BMenuItem("Files & folders", message);
+	item = new BMenuItem("Files & folders", new BMessage(kMsgFilterChanged));
 	item->SetMarked(true);
 	fTypeMenu->AddItem(item);
 
-	message = new BMessage(kMsgFilterChanged);
-	item = new BMenuItem("Files only", message);
+	item = new BMenuItem("Files only", new BMessage(kMsgFilterChanged));
 	fTypeMenu->AddItem(item);
 
-	message = new BMessage(kMsgFilterChanged);
-	item = new BMenuItem("Folders only", message);
+	item = new BMenuItem("Folders only", new BMessage(kMsgFilterChanged));
 	fTypeMenu->AddItem(item);
 
 	fTypeMenuField = new BMenuField("type", "", fTypeMenu);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-		.AddGroup(B_VERTICAL)
+		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.f)
 			.SetInsets(B_USE_WINDOW_SPACING)
 			.AddGrid(0.f)
 				.AddMenuField(fActionMenuField, 0, 0)
@@ -953,8 +959,8 @@ RenameWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 		case kMsgSetAction:
 		{
-			int32 index = message->GetInt32("index", 0);
-			fCardView->CardLayout()->SetVisibleItem(index);
+			fCardView->CardLayout()->SetVisibleItem(
+				fActionMenuField->Menu()->FindMarkedIndex());
 			fView = dynamic_cast<RenameView*>(
 				fCardView->CardLayout()->VisibleItem()->View());
 
