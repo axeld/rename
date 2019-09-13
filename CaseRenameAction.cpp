@@ -42,11 +42,7 @@ CaseRenameAction::Rename(BObjectList<Group>& sourceGroups,
 	BString output;
 	char* buffer = output.LockBuffer(B_PATH_NAME_LENGTH + 8);
 
-	int32 extensionStart = strlen(string);
-	while (extensionStart-- > 0) {
-		if (string[extensionStart] == '.')
-			break;
-	}
+	int32 extensionStart = SuffixIndex(string);
 	if (extensionStart >= 0)
 		extensionStart++;
 

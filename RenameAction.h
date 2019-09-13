@@ -28,6 +28,9 @@ public:
 	virtual BString				Rename(BObjectList<Group>& sourceGroups,
 									BObjectList<Group>& targetGroups,
 									const char* string) const = 0;
+
+protected:
+			int32				SuffixIndex(const char* string) const;
 };
 
 

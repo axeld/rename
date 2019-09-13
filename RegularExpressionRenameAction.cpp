@@ -7,6 +7,7 @@
 
 #include "rename.h"
 
+#include <CheckBox.h>
 #include <LayoutBuilder.h>
 #include <TextControl.h>
 
@@ -33,10 +34,11 @@ RegularExpressionRenameAction::~RegularExpressionRenameAction()
 
 
 bool
-RegularExpressionRenameAction::SetPattern(const char* pattern)
+RegularExpressionRenameAction::SetPattern(const char* pattern,
+	bool caseInsensitive)
 {
-	// TODO: add options for flags
-	int result = regcomp(&fCompiledPattern, pattern, REG_EXTENDED);
+	int result = regcomp(&fCompiledPattern, pattern,
+		REG_EXTENDED | (caseInsensitive ? REG_ICASE : 0));
 	// TODO: show/report error!
 	fValidPattern = result == 0;
 
@@ -57,8 +59,13 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
 	if (!fValidPattern)
 		return string;
 
+	BString text(string);
+	int32 suffixIndex = SuffixIndex(string);
+	if (fIgnoreExtension && suffixIndex > 0)
+		text.Truncate(suffixIndex);
+
 	regmatch_t groups[MAX_GROUPS];
-	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
+	if (regexec(&fCompiledPattern, text.String(), MAX_GROUPS, groups, 0))
 		return string;
 
 	for (int groupIndex = 1; groupIndex < MAX_GROUPS; groupIndex++) {
@@ -75,7 +82,7 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
 
 	if (groups[1].rm_so == -1) {
 		// There is just a single group -- just replace the match
-		stringBuffer.Prepend(string, groups[0].rm_so);
+		stringBuffer.Prepend(text, groups[0].rm_so);
 	}
 
 	char* buffer = stringBuffer.LockBuffer(B_PATH_NAME_LENGTH);
@@ -108,8 +115,10 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
 	if (groups[1].rm_so == -1) {
 		targetGroups.AddItem(new Group(0, groups[0].rm_so,
 			stringBuffer.Length()));
-		stringBuffer.Append(string + groups[0].rm_eo);
+		stringBuffer.Append(text.String() + groups[0].rm_eo);
 	}
+	if (fIgnoreExtension && suffixIndex > 0)
+		stringBuffer += &string[suffixIndex];
 
 	return stringBuffer;
 }
@@ -128,6 +137,11 @@ RegularExpressionView::RegularExpressionView()
 	fRenameControl = new BTextControl("Replace with", NULL, NULL);
 	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
 
+	fIgnoreExtensionCheckBox = new BCheckBox("extension", "Ignore extension",
+		new BMessage(kMsgUpdatePreview));
+	fCaseInsensitiveCheckBox = new BCheckBox("case", "Case insensitive",
+		new BMessage(kMsgUpdatePreview));
+
 	BLayoutBuilder::Group<>(this, B_VERTICAL)
 		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
 		.AddGrid(0.f)
@@ -135,6 +149,11 @@ RegularExpressionView::RegularExpressionView()
 			.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
 			.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
 			.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1)
+		.End()
+		.AddGroup(B_HORIZONTAL)
+			.AddGlue()
+			.Add(fIgnoreExtensionCheckBox)
+			.Add(fCaseInsensitiveCheckBox)
 		.End()
 		.AddGlue();
 
@@ -149,9 +168,12 @@ RegularExpressionView::~RegularExpressionView()
 RenameAction*
 RegularExpressionView::Action() const
 {
-	RegularExpressionRenameAction* action = new RegularExpressionRenameAction;
-	action->SetPattern(fPatternControl->Text());
+	RegularExpressionRenameAction* action = new RegularExpressionRenameAction();
+	action->SetPattern(fPatternControl->Text(),
+		fCaseInsensitiveCheckBox->Value() == B_CONTROL_ON);
 	action->SetReplace(fRenameControl->Text());
+	action->SetIgnoreExtension(
+		fIgnoreExtensionCheckBox->Value() == B_CONTROL_ON);
 	return action;
 }
 

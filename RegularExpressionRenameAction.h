@@ -10,6 +10,8 @@
 
 #include <regex.h>
 
+
+class BCheckBox;
 class BTextControl;
 
 
@@ -18,8 +20,12 @@ public:
 								RegularExpressionRenameAction();
 	virtual						~RegularExpressionRenameAction();
 
-			bool				SetPattern(const char* pattern);
+			bool				SetPattern(const char* pattern,
+									bool caseInsensitive);
 			void				SetReplace(const char* replace);
+
+			void				SetIgnoreExtension(bool ignore)
+									{ fIgnoreExtension = ignore; }
 
 	virtual BString				Rename(BObjectList<Group>& sourceGroups,
 									BObjectList<Group>& targetGroups,
@@ -28,6 +34,7 @@ public:
 private:
 			regex_t				fCompiledPattern;
 			bool				fValidPattern;
+			bool				fIgnoreExtension;
 			BString				fReplace;
 };
 
@@ -43,6 +50,8 @@ public:
 private:
 			BTextControl*		fPatternControl;
 			BTextControl*		fRenameControl;
+			BCheckBox*			fIgnoreExtensionCheckBox;
+			BCheckBox*			fCaseInsensitiveCheckBox;
 };
 
 
