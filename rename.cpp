@@ -552,9 +552,7 @@ PreviewItem::SetRenameAction(const RenameAction& action)
 	fRenameGroups.MakeEmpty();
 	fError = NO_ERROR;
 
-	action.AddGroups(fGroups, fRef.name);
-
-	BString newName = action.Rename(fRenameGroups, fRef.name);
+	BString newName = action.Rename(fGroups, fRenameGroups, fRef.name);
 	if (newName != fRef.name)
 		fTarget = newName;
 	else

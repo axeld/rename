@@ -53,58 +53,9 @@ WindowsRenameAction::SetReplaceString(const char* replace)
 }
 
 
-bool
-WindowsRenameAction::AddGroups(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	BString text(string);
-	int32 length = text.CountChars();
-	int groupIndex = 1;
-	int begin = -1;
-	int index = 0;
-	int byteIndex = 0;
-
-	for (; index < length; index++) {
-		int32 charSize;
-		const char* pos = text.CharAt(index, &charSize);
-
-		if (charSize == 1 && _IsInvalidCharacter(pos[0])) {
-			if (begin < 0)
-				begin = byteIndex;
-		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
-			begin = -1;
-		}
-		byteIndex += charSize;
-	}
-
-	if (begin >= 0) {
-		groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
-		begin = -1;
-	}
-
-	// Mark trailing dots or spaces
-	int end = byteIndex;
-	while (--index > 0) {
-		int32 charSize;
-		const char* pos = text.CharAt(index, &charSize);
-		if (charSize != 1 || (pos[0] != ' ' && pos[0] != '.'))
-			break;
-
-		byteIndex -= charSize;
-		begin = byteIndex;
-	}
-
-	if (begin >= 0)
-		groupList.AddItem(new Group(groupIndex++, begin, end));
-
-	return groupIndex > 1;
-}
-
-
 BString
-WindowsRenameAction::Rename(BObjectList<Group>& groupList,
-	const char* string) const
+WindowsRenameAction::Rename(BObjectList<Group>& sourceGroups,
+	BObjectList<Group>& targetGroups, const char* string) const
 {
 	BString stringBuffer = string;
 	int32 length = stringBuffer.CountChars();
@@ -112,6 +63,9 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 	int begin = -1;
 	int index = 0;
 	int byteIndex = 0;
+	int sourceGroupIndex = 1;
+	int sourceBegin = -1;
+	int sourceByteIndex = 0;
 
 	for (; index < length; index++) {
 		int32 charSize;
@@ -120,22 +74,53 @@ WindowsRenameAction::Rename(BObjectList<Group>& groupList,
 			stringBuffer.Remove(byteIndex, charSize);
 			stringBuffer.Insert(fReplaceString, byteIndex);
 
-			if (!fReplaceString.IsEmpty())
+			if (begin == -1 && !fReplaceString.IsEmpty())
 				begin = byteIndex;
+			if (sourceBegin == -1)
+				sourceBegin = sourceByteIndex;
 
 			byteIndex += fReplaceString.Length() - charSize;
 			int32 diff = fReplaceString.CountChars() - 1;
 			index += diff;
 			length += diff;
-		} else if (begin >= 0) {
-			groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
-			begin = -1;
+		} else {
+			if (begin >= 0) {
+				targetGroups.AddItem(new Group(groupIndex++, begin, byteIndex));
+				begin = -1;
+			}
+			if (sourceBegin >= 0) {
+				sourceGroups.AddItem(new Group(sourceGroupIndex++, sourceBegin,
+					sourceByteIndex));
+				sourceBegin = -1;
+			}
 		}
 		byteIndex += charSize;
+		sourceByteIndex += charSize;
 	}
 
 	if (begin >= 0)
-		groupList.AddItem(new Group(groupIndex++, begin, byteIndex));
+		targetGroups.AddItem(new Group(groupIndex++, begin, byteIndex));
+	if (sourceBegin >= 0) {
+		sourceGroups.AddItem(new Group(sourceGroupIndex++, sourceBegin,
+			sourceByteIndex));
+	}
+
+	// Mark trailing dots or spaces
+	BString text(string);
+	int end = sourceByteIndex;
+	int sourceIndex = text.CountChars();
+	while (--sourceIndex > 0) {
+		int32 charSize;
+		const char* pos = text.CharAt(sourceIndex, &charSize);
+		if (charSize != 1 || (pos[0] != ' ' && pos[0] != '.'))
+			break;
+
+		sourceByteIndex -= charSize;
+		sourceBegin = sourceByteIndex;
+	}
+
+	if (sourceBegin >= 0)
+		sourceGroups.AddItem(new Group(sourceGroupIndex++, sourceBegin, end));
 
 	// Cut off trailing dots or spaces
 	while (--index > 0) {

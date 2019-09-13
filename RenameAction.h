@@ -25,9 +25,8 @@ class RenameAction {
 public:
 	virtual						~RenameAction();
 
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const = 0;
-	virtual BString				Rename(BObjectList<Group>& groups,
+	virtual BString				Rename(BObjectList<Group>& sourceGroups,
+									BObjectList<Group>& targetGroups,
 									const char* string) const = 0;
 };
 

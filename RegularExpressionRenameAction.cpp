@@ -50,45 +50,28 @@ RegularExpressionRenameAction::SetReplace(const char* replace)
 }
 
 
-bool
-RegularExpressionRenameAction::AddGroups(BObjectList<Group>& groupList,
-	const char* string) const
+BString
+RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
+	BObjectList<Group>& targetGroups, const char* string) const
 {
 	if (!fValidPattern)
-		return false;
+		return string;
 
 	regmatch_t groups[MAX_GROUPS];
-
 	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
-		return false;
+		return string;
 
 	for (int groupIndex = 1; groupIndex < MAX_GROUPS; groupIndex++) {
 		if (groups[groupIndex].rm_so == -1)
 			break;
 
-		groupList.AddItem(new Group(groupIndex, groups[groupIndex].rm_so,
+		sourceGroups.AddItem(new Group(groupIndex, groups[groupIndex].rm_so,
 			groups[groupIndex].rm_eo));
 	}
-	if (groupList.IsEmpty())
-		groupList.AddItem(new Group(0, groups[0].rm_so, groups[0].rm_eo));
+	if (sourceGroups.IsEmpty())
+		sourceGroups.AddItem(new Group(0, groups[0].rm_so, groups[0].rm_eo));
 
-	return true;
-}
-
-
-BString
-RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	BString stringBuffer;
-	if (!fValidPattern)
-		return string;
-
-	regmatch_t groups[MAX_GROUPS];
-	if (regexec(&fCompiledPattern, string, MAX_GROUPS, groups, 0))
-		return string;
-
-	stringBuffer = fReplace;
+	BString stringBuffer(fReplace);
 
 	if (groups[1].rm_so == -1) {
 		// There is just a single group -- just replace the match
@@ -113,7 +96,7 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 			memmove(target, string + startOffset, length);
 
 			startOffset = target - buffer;
-			groupList.AddItem(new Group(groupIndex, startOffset,
+			targetGroups.AddItem(new Group(groupIndex, startOffset,
 				startOffset + length));
 
 			target += length - 1;
@@ -123,7 +106,7 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& groupList,
 	stringBuffer.UnlockBuffer();
 
 	if (groups[1].rm_so == -1) {
-		groupList.AddItem(new Group(0, groups[0].rm_so,
+		targetGroups.AddItem(new Group(0, groups[0].rm_so,
 			stringBuffer.Length()));
 		stringBuffer.Append(string + groups[0].rm_eo);
 	}

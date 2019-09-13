@@ -18,9 +18,8 @@ public:
 
 			void				SetReplaceString(const char* replace);
 
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const;
-	virtual BString				Rename(BObjectList<Group>& groups,
+	virtual BString				Rename(BObjectList<Group>& sourceGroups,
+									BObjectList<Group>& targetGroups,
 									const char* string) const;
 
 private:

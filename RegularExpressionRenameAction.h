@@ -21,9 +21,8 @@ public:
 			bool				SetPattern(const char* pattern);
 			void				SetReplace(const char* replace);
 
-	virtual	bool				AddGroups(BObjectList<Group>& groups,
-									const char* string) const;
-	virtual BString				Rename(BObjectList<Group>& groups,
+	virtual BString				Rename(BObjectList<Group>& sourceGroups,
+									BObjectList<Group>& targetGroups,
 									const char* string) const;
 
 private:

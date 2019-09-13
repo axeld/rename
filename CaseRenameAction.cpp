@@ -35,17 +35,9 @@ CaseRenameAction::~CaseRenameAction()
 }
 
 
-bool
-CaseRenameAction::AddGroups(BObjectList<Group>& groupList,
-	const char* string) const
-{
-	return false;
-}
-
-
 BString
-CaseRenameAction::Rename(BObjectList<Group>& groupList,
-	const char* string) const
+CaseRenameAction::Rename(BObjectList<Group>& sourceGroups,
+	BObjectList<Group>& targetGroups, const char* string) const
 {
 	BString output;
 	char* buffer = output.LockBuffer(B_PATH_NAME_LENGTH + 8);
@@ -110,7 +102,9 @@ CaseRenameAction::Rename(BObjectList<Group>& groupList,
 		if (c != origChar && groupStart < 0)
 			groupStart = fromIndex;
 		else if (c == origChar && groupStart >= 0) {
-			groupList.AddItem(new Group(groupIndex++, groupStart, fromIndex));
+			sourceGroups.AddItem(new Group(groupIndex, groupStart, fromIndex));
+			targetGroups.AddItem(new Group(groupIndex++, groupStart,
+				fromIndex));
 			groupStart = -1;
 		}
 
@@ -124,8 +118,10 @@ CaseRenameAction::Rename(BObjectList<Group>& groupList,
 	}
 	buffer[0] = '\0';
 
-	if (groupStart >= 0)
-		groupList.AddItem(new Group(groupIndex++, groupStart, fromIndex));
+	if (groupStart >= 0) {
+		sourceGroups.AddItem(new Group(groupIndex, groupStart, fromIndex));
+		targetGroups.AddItem(new Group(groupIndex, groupStart, fromIndex));
+	}
 
 	output.UnlockBuffer(B_PATH_NAME_LENGTH);
 	return output;
