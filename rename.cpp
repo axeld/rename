@@ -9,6 +9,7 @@
 #include "CaseRenameAction.h"
 #include "RefModel.h"
 #include "RegularExpressionRenameAction.h"
+#include "RenameSettings.h"
 #include "WindowsRenameAction.h"
 
 #include <Application.h>
@@ -48,8 +49,6 @@
 
 typedef std::set<BString> StringSet;
 
-
-static const uint32 kMsgRenameSettings = 'pReS';
 
 static const uint32 kMsgSetAction = 'stAc';
 static const uint32 kMsgRename = 'okRe';
@@ -159,7 +158,7 @@ private:
 
 class RenameWindow : public BWindow {
 public:
-								RenameWindow(BRect rect);
+								RenameWindow(RenameSettings& settings);
 	virtual						~RenameWindow();
 
 			void				AddRef(const entry_ref& ref);
@@ -174,6 +173,7 @@ private:
 			void				_RenameFiles();
 
 private:
+			RenameSettings&		fSettings;
 			BMenuField*			fActionMenuField;
 			BPopUpMenu*			fActionMenu;
 			BCardView*			fCardView;
@@ -224,77 +224,8 @@ static struct option const kOptions[] = {
 };
 
 
-BRect gWindowFrame(150, 150, 600, 500);
 bool gRecursive = true;
 bool gVerbose = false;
-
-
-status_t
-getSettingsPath(BPath &path)
-{
-	status_t status;
-	if ((status = find_directory(B_USER_SETTINGS_DIRECTORY, &path)) != B_OK)
-		return status;
-
-	path.Append("pinc.rename settings");
-	return B_OK;
-}
-
-
-status_t
-saveSettings()
-{
-	status_t status;
-
-	BPath path;
-	if ((status = getSettingsPath(path)) != B_OK)
-		return status;
-
-	BFile file(path.Path(), B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
-	if ((status = file.InitCheck()) != B_OK)
-		return status;
-
-	file.SetSize(0);
-
-	BMessage save(kMsgRenameSettings);
-	save.AddRect("window frame", gWindowFrame);
-
-	return save.Flatten(&file);
-}
-
-
-status_t
-readSettings()
-{
-	status_t status;
-
-	BPath path;
-	if ((status = getSettingsPath(path)) != B_OK)
-		return status;
-
-	BFile file(path.Path(), B_READ_ONLY);
-	if ((status = file.InitCheck()) != B_OK) {
-		fprintf(stderr, "%s: could not load settings: %s\n", kProgramName,
-			strerror(status));
-		return status;
-	}
-
-	BMessage load;
-	if ((status = load.Unflatten(&file)) != B_OK)
-		return status;
-
-	if (load.what != kMsgRenameSettings)
-		return B_ENTRY_NOT_FOUND;
-
-	BRect rect;
-	if (load.FindRect("window frame", &rect) == B_OK)
-		gWindowFrame = rect;
-
-	return B_OK;
-}
-
-
-//	#pragma mark -
 
 
 status_t
@@ -810,11 +741,21 @@ RenameView::RequestFocus() const
 //	#pragma mark - RenameWindow
 
 
-RenameWindow::RenameWindow(BRect rect)
+RenameWindow::RenameWindow(RenameSettings& settings)
 	:
-	BWindow(rect, B_TRANSLATE("Rename files"), B_DOCUMENT_WINDOW,
-		B_AUTO_UPDATE_SIZE_LIMITS | B_ASYNCHRONOUS_CONTROLS)
+	BWindow(BRect(0, 0, 99, 99), B_TRANSLATE("Rename files"), B_DOCUMENT_WINDOW,
+		B_AUTO_UPDATE_SIZE_LIMITS | B_ASYNCHRONOUS_CONTROLS),
+	fSettings(settings)
 {
+	status_t status = fSettings.Load();
+	if (status != B_OK) {
+		fprintf(stderr, "%s: could not load settings: %s\n", kProgramName,
+			strerror(status));
+	}
+	BRect frame = settings.WindowFrame();
+	MoveTo(frame.LeftTop());
+	ResizeTo(frame.Width(), frame.Height());
+
 	fOkButton = new BButton("ok", "Rename", new BMessage(kMsgRename));
 	fOkButton->SetEnabled(false);
 
@@ -929,10 +870,10 @@ RenameWindow::RenameWindow(BRect rect)
 
 RenameWindow::~RenameWindow()
 {
-	gWindowFrame = Frame();
 	fRenameProcessor.SendMessage(B_QUIT_REQUESTED);
 
-	saveSettings();
+	fSettings.SetWindowFrame(Frame());
+	fSettings.Save();
 
 	delete fRefModel;
 }
@@ -1411,9 +1352,8 @@ RenameProcessor::_Extract(const char* buffer, int length, char open,
 extern "C" void
 process_refs(entry_ref directoryRef, BMessage* msg, void*)
 {
-	readSettings();
-
-	RenameWindow* window = new RenameWindow(gWindowFrame);
+	RenameSettings settings;
+	RenameWindow* window = new RenameWindow(settings);
 
 	int32 count = window->AddRefs(*msg);
 	if (count == 0)
@@ -1469,9 +1409,9 @@ main(int argc, char** argv)
 	}
 
 	RenameWindow* window = NULL;
+	RenameSettings settings;
 	if (useUI) {
-		readSettings();
-		window = new RenameWindow(gWindowFrame);
+		window = new RenameWindow(settings);
 	}
 
 	for (int index = optind; index < argc; index++) {
