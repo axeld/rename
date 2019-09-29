@@ -134,8 +134,8 @@ RegularExpressionView::RegularExpressionView()
 	fPatternControl = new BTextControl("Pattern", NULL, NULL);
 	fPatternControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
 
-	fRenameControl = new BTextControl("Replace with", NULL, NULL);
-	fRenameControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
+	fReplaceControl = new BTextControl("Replace with", NULL, NULL);
+	fReplaceControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
 
 	fIgnoreExtensionCheckBox = new BCheckBox("extension", "Ignore extension",
 		new BMessage(kMsgUpdatePreview));
@@ -147,8 +147,8 @@ RegularExpressionView::RegularExpressionView()
 		.AddGrid(0.f)
 			.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
 			.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
-			.Add(fRenameControl->CreateLabelLayoutItem(), 0, 1)
-			.Add(fRenameControl->CreateTextViewLayoutItem(), 1, 1)
+			.Add(fReplaceControl->CreateLabelLayoutItem(), 0, 1)
+			.Add(fReplaceControl->CreateTextViewLayoutItem(), 1, 1)
 		.End()
 		.AddGroup(B_HORIZONTAL)
 			.AddGlue()
@@ -171,7 +171,7 @@ RegularExpressionView::Action() const
 	RegularExpressionRenameAction* action = new RegularExpressionRenameAction();
 	action->SetPattern(fPatternControl->Text(),
 		fCaseInsensitiveCheckBox->Value() == B_CONTROL_ON);
-	action->SetReplace(fRenameControl->Text());
+	action->SetReplace(fReplaceControl->Text());
 	action->SetIgnoreExtension(
 		fIgnoreExtensionCheckBox->Value() == B_CONTROL_ON);
 	return action;

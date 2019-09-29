@@ -49,7 +49,7 @@ public:
 
 private:
 			BTextControl*		fPatternControl;
-			BTextControl*		fRenameControl;
+			BTextControl*		fReplaceControl;
 			BCheckBox*			fIgnoreExtensionCheckBox;
 			BCheckBox*			fCaseInsensitiveCheckBox;
 };
