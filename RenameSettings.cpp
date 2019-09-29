@@ -85,6 +85,20 @@ RenameSettings::SetWindowFrame(BRect frame)
 }
 
 
+bool
+RenameSettings::Recursive() const
+{
+	return fSettings.GetBool("recursive", false);
+}
+
+
+void
+RenameSettings::SetRecursive(bool recursive)
+{
+	fSettings.SetBool("recursive", recursive);
+}
+
+
 status_t
 RenameSettings::Get(const char* name, BMessage& settings)
 {

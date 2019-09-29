@@ -22,6 +22,9 @@ public:
 			BRect				WindowFrame() const;
 			void				SetWindowFrame(BRect frame);
 
+			bool				Recursive() const;
+			void				SetRecursive(bool recursive);
+
 			status_t			Get(const char* name, BMessage& settings);
 			void				Set(const char* name, const BMessage& settings);
 

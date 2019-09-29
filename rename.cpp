@@ -768,6 +768,8 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 
 	fRecursiveCheckBox = new BCheckBox("recursive",
 		"Enter directories recursively", new BMessage(kMsgRecursive));
+	fRecursiveCheckBox->SetValue(
+		fSettings.Recursive() ? B_CONTROL_ON : B_CONTROL_OFF);
 
 	RenameView* regularExpressionView = fView = new RegularExpressionView();
 	RenameView* windowsRenameView = new WindowsRenameView();
@@ -861,6 +863,8 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	if (fRefModel->InitCheck() != B_OK)
 		debugger("No model!");
 
+	fRefModel->SetRecursive(fSettings.Recursive());
+
 	RenameProcessor* processor = new RenameProcessor();
 	processor->Run();
 
@@ -873,6 +877,7 @@ RenameWindow::~RenameWindow()
 	fRenameProcessor.SendMessage(B_QUIT_REQUESTED);
 
 	fSettings.SetWindowFrame(Frame());
+	fSettings.SetRecursive(fRecursiveCheckBox->Value() == B_CONTROL_ON);
 	fSettings.Save();
 
 	delete fRefModel;
