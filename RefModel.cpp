@@ -12,6 +12,14 @@
 #include <string.h>
 
 
+//#define TRACE_MODEL
+#ifdef TRACE_MODEL
+#	define TRACE(x, ...) printf(x, __VA_ARGS__)
+#else
+#	define TRACE(x, ...)
+#endif
+
+
 #define REMOVED_CHANGED 	0x01
 #define FILTER_CHANGED		0x02
 #define RECURSIVE_CHANGED	0x04
@@ -185,6 +193,8 @@ RefModel::_Work()
 			delete fOldFilter;
 			fOldFilter = NULL;
 		}
+		TRACE("Work: %" B_PRIx32 " recursive %d, filter %p\n", changes,
+			(int)recursive, filter);
 
 		// Rebuild transformed, if needed
 		if ((changes & (RECURSIVE_CHANGED | REFS_UPDATED)) != 0) {
