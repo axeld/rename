@@ -8,7 +8,6 @@
 #include "rename.h"
 
 #include <CheckBox.h>
-#include <LayoutBuilder.h>
 #include <TextControl.h>
 
 
@@ -21,7 +20,8 @@
 
 RegularExpressionRenameAction::RegularExpressionRenameAction()
 	:
-	fValidPattern(false)
+	fValidPattern(false),
+	fIgnoreExtension(false)
 {
 }
 
@@ -129,34 +129,8 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
 
 RegularExpressionView::RegularExpressionView()
 	:
-	RenameView("regular expression")
+	SearchReplaceView("regular expression")
 {
-	fPatternControl = new BTextControl("Pattern", NULL, NULL);
-	fPatternControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
-
-	fReplaceControl = new BTextControl("Replace with", NULL, NULL);
-	fReplaceControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
-
-	fIgnoreExtensionCheckBox = new BCheckBox("extension", "Ignore extension",
-		new BMessage(kMsgUpdatePreview));
-	fCaseInsensitiveCheckBox = new BCheckBox("case", "Case insensitive",
-		new BMessage(kMsgUpdatePreview));
-
-	BLayoutBuilder::Group<>(this, B_VERTICAL)
-		.SetInsets(B_USE_DEFAULT_SPACING, 0, 0, 0)
-		.AddGrid(0.f)
-			.Add(fPatternControl->CreateLabelLayoutItem(), 0, 0)
-			.Add(fPatternControl->CreateTextViewLayoutItem(), 1, 0)
-			.Add(fReplaceControl->CreateLabelLayoutItem(), 0, 1)
-			.Add(fReplaceControl->CreateTextViewLayoutItem(), 1, 1)
-		.End()
-		.AddGroup(B_HORIZONTAL)
-			.AddGlue()
-			.Add(fIgnoreExtensionCheckBox)
-			.Add(fCaseInsensitiveCheckBox)
-		.End()
-		.AddGlue();
-
 }
 
 
@@ -175,11 +149,4 @@ RegularExpressionView::Action() const
 	action->SetIgnoreExtension(
 		fIgnoreExtensionCheckBox->Value() == B_CONTROL_ON);
 	return action;
-}
-
-
-void
-RegularExpressionView::RequestFocus() const
-{
-	fPatternControl->MakeFocus(true);
 }

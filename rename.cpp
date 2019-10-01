@@ -10,6 +10,7 @@
 #include "RefModel.h"
 #include "RegularExpressionRenameAction.h"
 #include "RenameSettings.h"
+#include "SearchReplaceRenameAction.h"
 #include "WindowsRenameAction.h"
 
 #include <Application.h>
@@ -771,15 +772,19 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	fRecursiveCheckBox->SetValue(
 		fSettings.Recursive() ? B_CONTROL_ON : B_CONTROL_OFF);
 
-	RenameView* regularExpressionView = fView = new RegularExpressionView();
+	RenameView* searchReplaceView = fView = new SearchReplaceView();
+	RenameView* regularExpressionView = new RegularExpressionView();
 	RenameView* windowsRenameView = new WindowsRenameView();
 	RenameView* caseRenameView = new CaseRenameView();
 
 	fActionMenu = new BPopUpMenu("Actions");
 
-	BMenuItem* item = new BMenuItem("Regular expression",
+	BMenuItem* item = new BMenuItem("Search & Replace",
 		new BMessage(kMsgSetAction));
 	item->SetMarked(true);
+	fActionMenu->AddItem(item);
+
+	item = new BMenuItem("Regular expression", new BMessage(kMsgSetAction));
 	fActionMenu->AddItem(item);
 
 	item = new BMenuItem("Windows compliant", new BMessage(kMsgSetAction));
@@ -791,6 +796,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	fActionMenuField = new BMenuField("action", "Rename method", fActionMenu);
 
 	fCardView = new BCardView("action");
+	fCardView->AddChild(searchReplaceView);
 	fCardView->AddChild(regularExpressionView);
 	fCardView->AddChild(windowsRenameView);
 	fCardView->AddChild(caseRenameView);

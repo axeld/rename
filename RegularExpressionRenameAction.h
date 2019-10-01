@@ -5,14 +5,9 @@
 #define REGULAR_EXPRESSION_RENAME_ACTION_H
 
 
-#include "RenameAction.h"
-#include "RenameView.h"
+#include "SearchReplaceRenameAction.h"
 
 #include <regex.h>
-
-
-class BCheckBox;
-class BTextControl;
 
 
 class RegularExpressionRenameAction : public RenameAction {
@@ -39,19 +34,12 @@ private:
 };
 
 
-class RegularExpressionView : public RenameView {
+class RegularExpressionView : public SearchReplaceView {
 public:
 								RegularExpressionView();
 	virtual						~RegularExpressionView();
 
 	virtual	RenameAction*		Action() const;
-	virtual void				RequestFocus() const;
-
-private:
-			BTextControl*		fPatternControl;
-			BTextControl*		fReplaceControl;
-			BCheckBox*			fIgnoreExtensionCheckBox;
-			BCheckBox*			fCaseInsensitiveCheckBox;
 };
 
 

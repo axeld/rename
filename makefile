@@ -22,7 +22,7 @@ TYPE = APP
 #	in folder names do not work well with this makefile.
 SRCS =  rename.cpp RenameSettings.cpp RefModel.cpp RefFilter.cpp \
 	RegularExpressionRenameAction.cpp WindowsRenameAction.cpp \
-	CaseRenameAction.cpp
+	CaseRenameAction.cpp SearchReplaceRenameAction.cpp
 
 #	specify the resource files to use
 #	full path or a relative path to the resource file can be used.
