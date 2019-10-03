@@ -694,7 +694,7 @@ PreviewItem::_DrawGroupedText(BView* owner, BRect frame, float x,
 			x + endOffset);
 	}
 
-	// TODO: Draw parts with the correct low color
+	owner->SetDrawingMode(B_OP_OVER);
 	owner->MovePenTo(x, frame.top + BaselineOffset());
 	owner->DrawString(text.String());
 }
