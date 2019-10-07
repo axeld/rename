@@ -11,6 +11,9 @@
 class RenameAction;
 
 
+static const uint32 kMsgUpdatePreview = 'upPv';
+
+
 class RenameView : public BView {
 public:
 								RenameView(const char* name);

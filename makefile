@@ -20,9 +20,15 @@ TYPE = APP
 #	if two source files with the same name (source.c or source.cpp)
 #	are included from different directories.  Also note that spaces
 #	in folder names do not work well with this makefile.
-SRCS =  rename.cpp RenameSettings.cpp RefModel.cpp RefFilter.cpp \
-	RegularExpressionRenameAction.cpp WindowsRenameAction.cpp \
-	CaseRenameAction.cpp SearchReplaceRenameAction.cpp
+SRCS =  rename.cpp RenameSettings.cpp \
+	PreviewList.cpp PreviewItem.cpp RenameWindow.cpp \
+	RenameProcessor.cpp RefModel.cpp RefFilter.cpp \
+	rename_actions/RenameAction.cpp \
+	rename_actions/RenameView.cpp \
+	rename_actions/RegularExpressionRenameAction.cpp \
+	rename_actions/WindowsRenameAction.cpp \
+	rename_actions/CaseRenameAction.cpp \
+	rename_actions/SearchReplaceRenameAction.cpp
 
 #	specify the resource files to use
 #	full path or a relative path to the resource file can be used.

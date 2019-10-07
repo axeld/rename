@@ -5,10 +5,7 @@
 #define RENAME_H
 
 
-#include <SupportDefs.h>
-
-
-static const uint32 kMsgUpdatePreview = 'upPv';
+extern const char* kProgramName;
 
 
 #endif	// RENAME_H
