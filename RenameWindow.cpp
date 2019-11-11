@@ -25,6 +25,7 @@
 #include <MenuField.h>
 #include <PopUpMenu.h>
 #include <ScrollView.h>
+#include <SeparatorView.h>
 #include <TextControl.h>
 
 #include <set>
@@ -81,6 +82,23 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 		"Enter directories recursively", new BMessage(kMsgRecursive));
 	fRecursiveCheckBox->SetValue(
 		fSettings.Recursive() ? B_CONTROL_ON : B_CONTROL_OFF);
+	fRecursiveCheckBox->SetExplicitMaxSize(
+		BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	fTypeMenu = new BPopUpMenu("Types");
+
+	BMenuItem* item = new BMenuItem("files & folders",
+		new BMessage(kMsgFilterChanged));
+	item->SetMarked(true);
+	fTypeMenu->AddItem(item);
+
+	item = new BMenuItem("files only", new BMessage(kMsgFilterChanged));
+	fTypeMenu->AddItem(item);
+
+	item = new BMenuItem("folders only", new BMessage(kMsgFilterChanged));
+	fTypeMenu->AddItem(item);
+
+	fTypeMenuField = new BMenuField("type", "Rename", fTypeMenu);
 
 	RenameView* searchReplaceView = fView = new SearchReplaceView();
 	RenameView* regularExpressionView = new RegularExpressionView();
@@ -89,7 +107,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 
 	fActionMenu = new BPopUpMenu("Actions");
 
-	BMenuItem* item = new BMenuItem("Search & Replace",
+	item = new BMenuItem("Search & Replace",
 		new BMessage(kMsgSetAction));
 	item->SetMarked(true);
 	fActionMenu->AddItem(item);
@@ -124,39 +142,32 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	fReverseFilterCheckBox = new BCheckBox("reverse",
 		"Remove matching", new BMessage(kMsgFilterChanged));
 
-	fTypeMenu = new BPopUpMenu("Types");
-
-	item = new BMenuItem("Files & folders", new BMessage(kMsgFilterChanged));
-	item->SetMarked(true);
-	fTypeMenu->AddItem(item);
-
-	item = new BMenuItem("Files only", new BMessage(kMsgFilterChanged));
-	fTypeMenu->AddItem(item);
-
-	item = new BMenuItem("Folders only", new BMessage(kMsgFilterChanged));
-	fTypeMenu->AddItem(item);
-
-	fTypeMenuField = new BMenuField("type", "", fTypeMenu);
-
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.f)
+		.AddGroup(B_HORIZONTAL, B_USE_DEFAULT_SPACING, 0.f)
 			.SetInsets(B_USE_WINDOW_SPACING)
-			.AddGrid(0.f)
-				.AddMenuField(fActionMenuField, 0, 0)
+			.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 1.f)
+				.SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET))
+				.AddGrid(0.f)
+					.AddMenuField(fActionMenuField, 0, 0)
+				.End()
+				.Add(fCardView)
 			.End()
-			.Add(fCardView)
+			.Add(new BSeparatorView(B_VERTICAL), 0.f)
+			.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.f)
+				.Add(fRecursiveCheckBox)
+				.AddGrid(0.f)
+					.AddMenuField(fTypeMenuField, 0, 0)
+				.End()
+				.AddGlue()
+			.End()
 		.End()
 		.AddGroup(B_HORIZONTAL)
 			.SetInsets(B_USE_DEFAULT_SPACING, 0,
 				B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
-			.Add(fRecursiveCheckBox)
-			.AddGlue()
-			.AddGroup(B_VERTICAL)
+			.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 10.f)
 				.AddGlue()
-				.AddGrid(5, 1)
-					.AddMenuField(fTypeMenuField, 0, 0)
-					.AddGlue(2, 0)
-					.AddTextControl(fFilterControl, 3, 0)
+				.AddGrid(0.f)
+					.AddTextControl(fFilterControl, 0, 0)
 				.End()
 				.AddGlue()
 			.End()
