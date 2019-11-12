@@ -77,12 +77,11 @@ RenameProcessor::_ProcessRef(BMessage& update, const entry_ref& ref,
 			BString result;
 			bool changed = false;
 
-			if (expressionLength > 0 && open == '(') {
-				// bash script
-				// TODO!
-				result = "bash";
+			if (expressionLength > 0 && open == '[') {
+				// shell script
+				result = _ExecuteShell(ref, expression.String());
 				changed = true;
-			} else if (expressionLength > 0 && open == '[') {
+			} else if (expressionLength > 0 && open == '(') {
 				// Attribute replacement
 				result = _ReadAttribute(ref, expression.String());
 				changed = true;
@@ -198,6 +197,45 @@ RenameProcessor::_ReadAttribute(const entry_ref& ref, const char* name)
 			break;
 	}
 	return result;
+}
+
+
+BString
+RenameProcessor::_ExecuteShell(const entry_ref& ref, const char* script)
+{
+	BPath path(&ref);
+	if (path.InitCheck() != B_OK)
+		return "";
+
+	BString output;
+
+	setenv("file", path.Path(), true);
+
+	BString scriptBuffer = script;
+	scriptBuffer.ReplaceAll("'", "\'");
+
+	BString commandBuffer = BString().SetToFormat("bash -c '%s'",
+		scriptBuffer.String());
+
+	FILE* pipe = popen(commandBuffer.String(), "r");
+	if (pipe == NULL)
+		return "";
+
+	while (true) {
+		char buffer[4096];
+		const char* line = fgets(buffer, sizeof(buffer), pipe);
+		if (line == NULL)
+			break;
+
+		output += line;
+
+		// Cut off trailing newline
+		if (output.ByteAt(output.Length() - 1) == '\n')
+			output.Truncate(output.Length() - 1);
+	}
+	pclose(pipe);
+
+	return output;
 }
 
 

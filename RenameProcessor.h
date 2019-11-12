@@ -26,6 +26,8 @@ private:
 									const BString& target);
 			BString				_ReadAttribute(const entry_ref& ref,
 									const char* name);
+			BString				_ExecuteShell(const entry_ref& ref,
+									const char* script);
 			int					_Extract(const char* buffer, int length,
 									char open, BString& expression);
 };
