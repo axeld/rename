@@ -90,7 +90,7 @@ SYMBOLS =
 DEBUGGER = TRUE
 
 #	specify additional compiler flags for all files
-COMPILER_FLAGS =
+COMPILER_FLAGS = -Wno-parentheses
 
 #	specify additional linker flags
 LINKER_FLAGS =
