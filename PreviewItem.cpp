@@ -123,7 +123,6 @@ const char*
 PreviewItem::ErrorMessage() const
 {
 	switch (fError) {
-		default:
 		case NO_ERROR:
 			return NULL;
 		case INVALID_NAME:
@@ -132,6 +131,11 @@ PreviewItem::ErrorMessage() const
 			return "Duplicated name!";
 		case EXISTS:
 			return "Already exists!";
+		case MISSING_REPLACEMENT:
+			return "Missing replacement!";
+
+		default:
+			return "Unknown error!";
 	}
 }
 

@@ -49,12 +49,14 @@ private:
 			BButton*			fOkButton;
 			BButton*			fResetRemovedButton;
 			BButton*			fRemoveUnchangedButton;
-			BCheckBox*			fRecursiveCheckBox;
 			BTextControl*		fFilterControl;
 			BCheckBox*			fRegExpFilterCheckBox;
 			BCheckBox*			fReverseFilterCheckBox;
+			BCheckBox*			fRecursiveCheckBox;
 			BMenuField*			fTypeMenuField;
 			BPopUpMenu*			fTypeMenu;
+			BMenuField*			fReplacementMenuField;
+			BPopUpMenu*			fReplacementMenu;
 			PreviewList*		fPreviewList;
 			RefModel*			fRefModel;
 			BMessenger			fRenameProcessor;

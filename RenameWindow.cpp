@@ -48,11 +48,6 @@ static const uint32 kMsgResetRemoved = 'rsrm';
 #define B_TRANSLATION_CONTEXT "Rename"
 
 
-#define FILES_AND_FOLDERS	0
-#define	FILES_ONLY			1
-#define FOLDERS_ONLY		2
-
-
 RenameWindow::RenameWindow(RenameSettings& settings)
 	:
 	BWindow(BRect(0, 0, 99, 99), B_TRANSLATE("Rename files"), B_DOCUMENT_WINDOW,
@@ -82,23 +77,35 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 		"Enter directories recursively", new BMessage(kMsgRecursive));
 	fRecursiveCheckBox->SetValue(
 		fSettings.Recursive() ? B_CONTROL_ON : B_CONTROL_OFF);
-	fRecursiveCheckBox->SetExplicitMaxSize(
-		BSize(B_SIZE_UNLIMITED, B_SIZE_UNSET));
+
+	// File type menu field
 
 	fTypeMenu = new BPopUpMenu("Types");
 
-	BMenuItem* item = new BMenuItem("files & folders",
-		new BMessage(kMsgFilterChanged));
-	item->SetMarked(true);
-	fTypeMenu->AddItem(item);
-
-	item = new BMenuItem("files only", new BMessage(kMsgFilterChanged));
-	fTypeMenu->AddItem(item);
-
-	item = new BMenuItem("folders only", new BMessage(kMsgFilterChanged));
-	fTypeMenu->AddItem(item);
+	fTypeMenu->AddItem(new BMenuItem("files & folders",
+		new BMessage(kMsgFilterChanged)));
+	fTypeMenu->AddItem(new BMenuItem("files only",
+		new BMessage(kMsgFilterChanged)));
+	fTypeMenu->AddItem(new BMenuItem("folders only",
+		new BMessage(kMsgFilterChanged)));
 
 	fTypeMenuField = new BMenuField("type", "Rename", fTypeMenu);
+
+	// Replacement menu field
+
+	fReplacementMenu = new BPopUpMenu("Mode");
+
+	fReplacementMenu->AddItem(new BMenuItem("may all be missing",
+		new BMessage(kMsgUpdatePreview)));
+	fReplacementMenu->AddItem(new BMenuItem("at least one must be set",
+		new BMessage(kMsgUpdatePreview)));
+	fReplacementMenu->AddItem(new BMenuItem("must all be set",
+		new BMessage(kMsgUpdatePreview)));
+
+	fReplacementMenuField = new BMenuField("replacement", "Replacements",
+		fReplacementMenu);
+
+	// Rename methods
 
 	RenameView* searchReplaceView = fView = new SearchReplaceView();
 	RenameView* regularExpressionView = new RegularExpressionView();
@@ -107,7 +114,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 
 	fActionMenu = new BPopUpMenu("Actions");
 
-	item = new BMenuItem("Search & Replace",
+	BMenuItem* item = new BMenuItem("Search & Replace",
 		new BMessage(kMsgSetAction));
 	item->SetMarked(true);
 	fActionMenu->AddItem(item);
@@ -157,6 +164,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 				.Add(fRecursiveCheckBox)
 				.AddGrid(0.f)
 					.AddMenuField(fTypeMenuField, 0, 0)
+					.AddMenuField(fReplacementMenuField, 0, 1)
 				.End()
 				.AddGlue()
 			.End()
@@ -307,34 +315,48 @@ RenameWindow::MessageReceived(BMessage* message)
 void
 RenameWindow::_HandleProcessed(BMessage* message)
 {
+	ReplacementMode replacementMode
+		= (ReplacementMode)fReplacementMenu->FindMarkedIndex();
 	int32 processedCount = 0;
 	int32 errorCount = 0;
-	entry_ref ref;
-	for (int32 index = 0; message->FindRef("ref", index, &ref)
+	BMessage update;
+	for (int32 index = 0; message->FindMessage("update", index, &update)
 			== B_OK; index++) {
-		BString replace;
-		int32 from;
-		int32 to;
-		if (message->FindString("replace", index, &replace) != B_OK
-			|| message->FindInt32("from", index, &from) != B_OK
-			|| message->FindInt32("to", index, &to) != B_OK)
+		entry_ref ref;
+		if (update.FindRef("ref", &ref) != B_OK)
 			continue;
 
 		PreviewItem* item = fPreviewList->ItemForRef(ref);
-		if (item != NULL) {
-			item->UpdateProcessed(from, to, replace);
-			processedCount++;
-		}
-	}
+		if (item == NULL)
+			continue;
 
-	for (int32 index = 0; message->FindRef("exists", index, &ref)
-			== B_OK; index++) {
-		PreviewItem* item = fPreviewList->ItemForRef(ref);
-		if (item != NULL) {
+		bool hasEmpty = update.GetBool("has empty");
+		bool allEmpty = update.GetBool("all empty");
+		if (replacementMode == NEED_ANY_REPLACEMENTS && allEmpty
+			|| replacementMode == NEED_ALL_REPLACEMENTS && hasEmpty) {
+			item->SetError(MISSING_REPLACEMENT);
+			errorCount++;
+		} else if (update.GetBool("exists")) {
 			item->SetError(EXISTS);
 			errorCount++;
 		}
+
+		BString replace;
+		int32 from;
+		int32 to;
+		for (int32 replaceIndex = 0; update.FindString("replace",
+				replaceIndex, &replace) == B_OK; replaceIndex++) {
+			if (update.FindInt32("from", replaceIndex, &from) != B_OK
+				|| update.FindInt32("to", replaceIndex, &to) != B_OK)
+				break;
+
+			item->UpdateProcessed(from, to, replace);
+		}
+
+		processedCount++;
+
 	}
+
 	if (errorCount != 0 || processedCount != 0)
 		fPreviewList->Invalidate();
 	if (errorCount == 0)

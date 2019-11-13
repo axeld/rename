@@ -37,11 +37,8 @@ RenameProcessor::MessageReceived(BMessage* message)
 			for (index = 0; message->FindRef("source", index, &ref) == B_OK;
 					index++) {
 				BString target;
-				if (message->FindString("target", index, &target) == B_OK) {
+				if (message->FindString("target", index, &target) == B_OK)
 					_ProcessRef(reply, ref, target);
-					if (!_CheckRef(ref, target))
-						reply.AddRef("exists", &ref);
-				}
 			}
 
 			message->SendReply(&reply);
@@ -55,14 +52,23 @@ RenameProcessor::MessageReceived(BMessage* message)
 }
 
 
-//!	Evaluate expressions in the target name.
-void
-RenameProcessor::_ProcessRef(BMessage& update, const entry_ref& ref,
+/*!	Evaluate expressions in the target name, and checks if the file
+	name already exists.
+
+	\return true if something has been added to the \a update message.
+*/
+bool
+RenameProcessor::_ProcessRef(BMessage& updates, const entry_ref& ref,
 	const BString& target)
 {
 	int length = target.Length();
 	const char* buffer = target.String();
 	int diff = 0;
+	int expressionCount = 0;
+	int emptyCount = 0;
+
+	BMessage update;
+	update.AddRef("ref", &ref);
 
 	for (int index = 0; index < length - 3; index++) {
 		if (buffer[index] == '$') {
@@ -88,7 +94,10 @@ RenameProcessor::_ProcessRef(BMessage& update, const entry_ref& ref,
 			}
 
 			if (changed) {
-				update.AddRef("ref", &ref);
+				expressionCount++;
+				if (result.IsEmpty())
+					emptyCount++;
+
 				update.AddInt32("from", index + diff);
 				update.AddInt32("to", index + expressionLength + 3 + diff);
 				update.AddString("replace", result);
@@ -98,6 +107,21 @@ RenameProcessor::_ProcessRef(BMessage& update, const entry_ref& ref,
 			}
 		}
 	}
+
+	if (expressionCount > 0) {
+		update.AddBool("has empty", emptyCount > 0);
+		update.AddBool("all empty", expressionCount == emptyCount);
+	}
+
+	bool exists = _CheckRef(ref, target);
+	if (!exists)
+		update.AddBool("exists", true);
+
+	if (expressionCount > 0 || !exists) {
+		updates.AddMessage("update", &update);
+		return true;
+	}
+	return false;
 }
 
 

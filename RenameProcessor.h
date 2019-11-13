@@ -19,7 +19,7 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 
 private:
-			void				_ProcessRef(BMessage& update,
+			bool				_ProcessRef(BMessage& update,
 									const entry_ref& ref,
 									const BString& target);
 			bool				_CheckRef(const entry_ref& ref,
