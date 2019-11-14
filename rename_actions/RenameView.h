@@ -21,6 +21,9 @@ public:
 
 	virtual	RenameAction*		Action() const = 0;
 	virtual void				RequestFocus() const;
+
+	virtual	void				SetSettings(const BMessage& settings) = 0;
+	virtual void				GetSettings(BMessage& settings) = 0;
 };
 
 

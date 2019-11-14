@@ -181,7 +181,7 @@ SearchReplaceRenameAction::_AddGroup(BObjectList<Group>& groups,
 
 SearchReplaceView::SearchReplaceView()
 	:
-	RenameView("search & replace")
+	RenameView("method:search & replace")
 {
 	Init();
 }
@@ -210,6 +210,30 @@ void
 SearchReplaceView::RequestFocus() const
 {
 	fPatternControl->MakeFocus(true);
+}
+
+
+void
+SearchReplaceView::SetSettings(const BMessage& settings)
+{
+	fPatternControl->SetText(settings.GetString("pattern"));
+	fReplaceControl->SetText(settings.GetString("replace"));
+	fCaseInsensitiveCheckBox->SetValue(settings.GetBool("case insensitive")
+		? B_CONTROL_ON : B_CONTROL_OFF);
+	fIgnoreExtensionCheckBox->SetValue(settings.GetBool("ignore extension")
+		? B_CONTROL_ON : B_CONTROL_OFF);
+}
+
+
+void
+SearchReplaceView::GetSettings(BMessage& settings)
+{
+	settings.SetString("pattern", fPatternControl->Text());
+	settings.SetString("replace", fReplaceControl->Text());
+	settings.SetBool("case insensitive",
+		fCaseInsensitiveCheckBox->Value() == B_CONTROL_ON);
+	settings.SetBool("ignore extension",
+		fIgnoreExtensionCheckBox->Value() == B_CONTROL_ON);
 }
 
 

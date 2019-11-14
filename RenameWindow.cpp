@@ -88,6 +88,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 		new BMessage(kMsgFilterChanged)));
 	fTypeMenu->AddItem(new BMenuItem("folders only",
 		new BMessage(kMsgFilterChanged)));
+	fTypeMenu->ItemAt((int32)fSettings.FileTypeMode())->SetMarked(true);
 
 	fTypeMenuField = new BMenuField("type", "Rename", fTypeMenu);
 
@@ -101,6 +102,8 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 		new BMessage(kMsgUpdatePreview)));
 	fReplacementMenu->AddItem(new BMenuItem("must all be set",
 		new BMessage(kMsgUpdatePreview)));
+	fReplacementMenu->ItemAt((int32)fSettings.ReplacementMode())
+		->SetMarked(true);
 
 	fReplacementMenuField = new BMenuField("replacement", "Replacements",
 		fReplacementMenu);
@@ -136,6 +139,16 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	fCardView->AddChild(windowsRenameView);
 	fCardView->AddChild(caseRenameView);
 	fCardView->CardLayout()->SetVisibleItem(0L);
+
+	// Restore settings
+	for (int32 index = 0; index < fCardView->CountChildren(); index++) {
+		if (RenameView* view = dynamic_cast<RenameView*>(
+				fCardView->ChildAt(index))) {
+			BMessage settings;
+			if (fSettings.Get(view->Name(), settings) == B_OK)
+				view->SetSettings(settings);
+		}
+	}
 
 	fPreviewList = new PreviewList("preview");
 
@@ -213,6 +226,19 @@ RenameWindow::~RenameWindow()
 
 	fSettings.SetWindowFrame(Frame());
 	fSettings.SetRecursive(fRecursiveCheckBox->Value() == B_CONTROL_ON);
+	fSettings.SetFileTypeMode((FileTypeMode)fTypeMenu->FindMarkedIndex());
+	fSettings.SetReplacementMode(
+		(ReplacementMode)fReplacementMenu->FindMarkedIndex());
+
+	for (int32 index = 0; index < fCardView->CountChildren(); index++) {
+		if (RenameView* view = dynamic_cast<RenameView*>(
+				fCardView->ChildAt(index))) {
+			BMessage settings;
+			view->GetSettings(settings);
+			fSettings.Set(view->Name(), settings);
+		}
+	}
+
 	fSettings.Save();
 
 	delete fRefModel;

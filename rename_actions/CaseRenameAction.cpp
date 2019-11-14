@@ -129,7 +129,7 @@ CaseRenameAction::Rename(BObjectList<Group>& sourceGroups,
 
 CaseRenameView::CaseRenameView()
 	:
-	RenameView("case")
+	RenameView("method:case")
 {
 	BMenu* menu = new BPopUpMenu("Mode");
 	BMenuItem* item = new BMenuItem("Title case", new BMessage(kMsgSetMode));
@@ -183,6 +183,35 @@ CaseRenameView::Action() const
 	action->SetForce(fForceCheckBox->Value() == B_CONTROL_ON);
 
 	return action;
+}
+
+
+void
+CaseRenameView::SetSettings(const BMessage& settings)
+{
+	BMenuItem* item = fModeField->Menu()->ItemAt(
+		settings.GetUInt32("mode", (uint32)TITLE_CASE));
+	if (item != NULL)
+		item->SetMarked(true);
+
+	item = fExtensionModeField->Menu()->ItemAt(
+		settings.GetUInt32("extension mode", (uint32)LOWER_CASE_EXTENSION));
+	if (item != NULL)
+		item->SetMarked(true);
+
+	fForceCheckBox->SetValue(settings.GetBool("force")
+		? B_CONTROL_ON : B_CONTROL_OFF);
+}
+
+
+void
+CaseRenameView::GetSettings(BMessage& settings)
+{
+	settings.SetUInt32("mode", fModeField->Menu()->FindMarkedIndex());
+	settings.SetUInt32("extension mode",
+		fExtensionModeField->Menu()->FindMarkedIndex());
+
+	settings.SetBool("force", fForceCheckBox->Value() == B_CONTROL_ON);
 }
 
 

@@ -164,7 +164,7 @@ WindowsRenameAction::_IsInvalidCharacter(char c)
 
 WindowsRenameView::WindowsRenameView()
 	:
-	RenameView("windows")
+	RenameView("method:windows")
 {
 	fReplaceControl = new BTextControl("Replace character", NULL, NULL);
 	fReplaceControl->SetModificationMessage(new BMessage(kMsgUpdatePreview));
@@ -199,4 +199,18 @@ void
 WindowsRenameView::RequestFocus() const
 {
 	fReplaceControl->MakeFocus(true);
+}
+
+
+void
+WindowsRenameView::SetSettings(const BMessage& settings)
+{
+	fReplaceControl->SetText(settings.GetString("replace"));
+}
+
+
+void
+WindowsRenameView::GetSettings(BMessage& settings)
+{
+	settings.SetString("replace", fReplaceControl->Text());
 }

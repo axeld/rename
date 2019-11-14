@@ -53,6 +53,9 @@ public:
 	virtual	RenameAction*		Action() const;
 	virtual void				RequestFocus() const;
 
+	virtual	void				SetSettings(const BMessage& settings);
+	virtual void				GetSettings(BMessage& settings);
+
 protected:
 								SearchReplaceView(const char* name);
 

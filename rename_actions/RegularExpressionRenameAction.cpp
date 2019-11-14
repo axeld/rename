@@ -129,7 +129,7 @@ RegularExpressionRenameAction::Rename(BObjectList<Group>& sourceGroups,
 
 RegularExpressionView::RegularExpressionView()
 	:
-	SearchReplaceView("regular expression")
+	SearchReplaceView("method:regular expression")
 {
 }
 

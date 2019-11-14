@@ -99,6 +99,36 @@ RenameSettings::SetRecursive(bool recursive)
 }
 
 
+::FileTypeMode
+RenameSettings::FileTypeMode() const
+{
+	return (::FileTypeMode)fSettings.GetUInt32("file type mode",
+		(uint32)FILES_AND_FOLDERS);
+}
+
+
+void
+RenameSettings::SetFileTypeMode(::FileTypeMode mode)
+{
+	fSettings.SetUInt32("file type mode", (uint32)mode);
+}
+
+
+::ReplacementMode
+RenameSettings::ReplacementMode() const
+{
+	return (::ReplacementMode)fSettings.GetUInt32("replacement mode",
+		(uint32)NEED_ALL_REPLACEMENTS);
+}
+
+
+void
+RenameSettings::SetReplacementMode(::ReplacementMode mode)
+{
+	fSettings.SetUInt32("replacement mode", (uint32)mode);
+}
+
+
 status_t
 RenameSettings::Get(const char* name, BMessage& settings)
 {
