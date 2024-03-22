@@ -118,12 +118,13 @@ main(int argc, char** argv)
 {
 	BApplication app("application/x-vnd.pinc.rename");
 
-	if (argc == 1) {
+	// $TERM is not defined when launched from Tracker
+	bool useUI = getenv("TERM") == NULL;
+
+	if (argc == 1 && !useUI) {
 		printUsage();
 		return 1;
 	}
-
-	bool useUI = false;
 
 	int c;
 	while ((c = getopt_long(argc, argv, "uhv", kOptions, NULL)) != -1) {
