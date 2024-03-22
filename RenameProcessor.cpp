@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
@@ -15,6 +15,8 @@
 #include <map>
 #include <new>
 #include <set>
+
+#include <stdio.h>
 
 
 RenameProcessor::RenameProcessor()

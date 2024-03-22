@@ -1,6 +1,6 @@
 /* rename - Batch rename Tracker add-on
  *
- * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
@@ -17,6 +17,7 @@
 
 #include <getopt.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 
 extern const char* __progname;
