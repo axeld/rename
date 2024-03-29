@@ -310,7 +310,12 @@ RefModel::_RemoveStale(BMessage& update)
 		if (fTransformedDirs.find(ref) == fTransformedDirs.end()
 			&& fTransformedFiles.find(ref) == fTransformedFiles.end()) {
 			update.AddRef("remove", &ref);
+#if __GNUC__ == 2
+			EntrySet::iterator toRemove = iterator++;
+			fFiltered.erase(toRemove);
+#else
 			iterator = fFiltered.erase(iterator);
+#endif
 		} else
 			iterator++;
 	}

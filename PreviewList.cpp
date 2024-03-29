@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
@@ -7,6 +7,7 @@
 
 #include "PreviewItem.h"
 #include "RefModel.h"
+#include "RenameAction.h"
 #include "RenameView.h"
 #include "RenameWindow.h"
 
