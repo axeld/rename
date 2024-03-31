@@ -105,7 +105,7 @@ process_refs(entry_ref directoryRef, BMessage* msg, void*)
 void
 printUsage()
 {
-	printf("Copyright (c) 2019 pinc software.\n"
+	printf("Copyright (c) 2019-2024 pinc software.\n"
 		"Usage: %s [-vrmfictds] <list of directories>\n"
 		"  -v\tverbose mode\n"
 		"  -u\tshow UI\n",
