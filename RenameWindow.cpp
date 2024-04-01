@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
 #include "RenameWindow.h"
 
+#include "batchrename.h"
 #include "CaseRenameAction.h"
 #include "PreviewItem.h"
 #include "PreviewList.h"
 #include "RefModel.h"
-#include "rename.h"
 #include "RegularExpressionRenameAction.h"
 #include "RenameProcessor.h"
 #include "RenameSettings.h"

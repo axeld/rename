@@ -1,11 +1,9 @@
 /*
- * Copyright (c) 2019 pinc Software. All Rights Reserved.
+ * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
 #include "SearchReplaceRenameAction.h"
-
-#include "rename.h"
 
 #include <CheckBox.h>
 #include <LayoutBuilder.h>

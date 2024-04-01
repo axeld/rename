@@ -3,7 +3,7 @@
 ## Application Specific Settings ---------------------------------------------
 
 # specify the name of the binary
-NAME = rename
+NAME = batchrename
 
 # specify the type of binary
 #	APP:	Application
@@ -20,7 +20,7 @@ TYPE = APP
 #	if two source files with the same name (source.c or source.cpp)
 #	are included from different directories.  Also note that spaces
 #	in folder names do not work well with this makefile.
-SRCS =  rename.cpp RenameSettings.cpp \
+SRCS =  batchrename.cpp RenameSettings.cpp \
 	PreviewList.cpp PreviewItem.cpp RenameWindow.cpp \
 	RenameProcessor.cpp RefModel.cpp RefFilter.cpp \
 	rename_actions/RenameAction.cpp \
@@ -32,7 +32,7 @@ SRCS =  rename.cpp RenameSettings.cpp \
 
 #	specify the resource files to use
 #	full path or a relative path to the resource file can be used.
-RDEFS = rename.rdef
+RDEFS = batchrename.rdef
 RSRCS =
 
 #	specify additional libraries to link against

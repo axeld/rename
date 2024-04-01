@@ -1,10 +1,10 @@
-/* rename - Batch rename Tracker add-on
+/* batchrename - Batch rename Tracker add-on
  *
  * Copyright (c) 2019-2024 pinc Software. All Rights Reserved.
  */
 
 
-#include "rename.h"
+#include "batchrename.h"
 
 #include "RenameSettings.h"
 #include "RenameWindow.h"
