@@ -138,7 +138,7 @@ RenameWindow::RenameWindow(RenameSettings& settings)
 	fCardView->AddChild(regularExpressionView);
 	fCardView->AddChild(windowsRenameView);
 	fCardView->AddChild(caseRenameView);
-	fCardView->CardLayout()->SetVisibleItem(0L);
+	fCardView->CardLayout()->SetVisibleItem((int32)0);
 
 	// Restore settings
 	for (int32 index = 0; index < fCardView->CountChildren(); index++) {
