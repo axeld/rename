@@ -21,6 +21,10 @@ rename [-vr] <list of directories/files>
 	-u	show UI
 ```
 
+For the replacement text, you can include the contents of an attribute "Media:Year" by using $(Media:Year). If you use brackets instead of parentheses, you can also include the output of shell commands. For instance, to add the current date to a file name, you can use $[date +%Y-%m-%d]. If you want to use the date of the file instead, you can use $[date -r $file +%Y-%m-%d]; the environment variable "$file" always contains the currently renamed file.
+
+![Screenshot](https://www.pinc-software.de/images/batchrename.png)
+
 ### history.
 version 0.1.0 (22.3.2019)
  - initial release.
